@@ -16,6 +16,10 @@
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/packet-sink.h"
 #include "ns3/yans-wifi-channel.h"
+#include "ns3/flow-monitor-helper.h"
+#include "ns3/stats-module.h"
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
 
 using namespace ns3;
 
@@ -24,9 +28,15 @@ std::string tcpVariant = std::string("ns3::") + "TcpNewReno";
 uint32_t payloadSize = 1472; // bytes
 double simulationTime = 5; //seconds
 double frequency = 5.0; // 5.0 GHz
-double step = 10; //meters
+double step = 5; //meters
 bool shortGuardInterval = false;
 bool preambleDetection = false;
+
+void TxCallback (Ptr<CounterCalculator<uint32_t> > datac,
+                 std::string path, Ptr<const Packet> packet) {
+  datac->Update ();
+  // end TxCallback
+}
 
 double GetThroughput (ApplicationContainer serverApp)
 {
@@ -36,12 +46,21 @@ double GetThroughput (ApplicationContainer serverApp)
 	return throughput;
 }
 
-void RunSimulation(uint8_t nStreams, Gnuplot &plot, std::string mode)
+double GetAvgTxPackets(Ptr<CounterCalculator<uint32_t>> datac)
+{
+	uint32_t txPacketsCount = datac->GetCount();
+	double avgTxCount = txPacketsCount / (simulationTime * 1000.0); //K packets/s
+
+	return avgTxCount;
+}
+
+void RunSimulation(uint8_t nStreams, Gnuplot &plot_throughput, Gnuplot &plot_txPackets, std::string mode)
 {
 	std::string strTestSet = mode + "-" + std::to_string(nStreams) + "x" + std::to_string(nStreams);
-	Gnuplot2dDataset dataset (strTestSet);
+	Gnuplot2dDataset dataset_throughput (strTestSet);
+	Gnuplot2dDataset dataset_txPackets (strTestSet);
 	std::cout << strTestSet << std::endl;
-	for (double d=0; d<100; d+=step) {
+	for (double d=0; d<800; d+=step) {
 		NodeContainer wifiStaNode;
 		wifiStaNode.Create(1);
 		NodeContainer wifiApNode;
@@ -127,20 +146,40 @@ void RunSimulation(uint8_t nStreams, Gnuplot &plot, std::string mode)
 
 		Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
+		// Tracking frame loss
+		Ptr<CounterCalculator<uint32_t>> totalTx = CreateObject<CounterCalculator<uint32_t>>();
+		totalTx->SetKey("wifi-tx-frames");
+		totalTx->SetContext("node[0]");
+		Config::Connect("/NodeList/0/DeviceList/*/$ns3::WifiNetDevice/Mac/MacTx",
+										MakeBoundCallback(&TxCallback, totalTx));
+		
+		Ptr<PacketCounterCalculator> totalRx = CreateObject<PacketCounterCalculator>();
+		totalRx->SetKey("wifi-rx-frames");
+		totalRx->SetContext("node[1]");
+		Config::Connect ("/NodeList/1/DeviceList/*/$ns3::WifiNetDevice/Mac/MacRx",
+											MakeCallback(&PacketCounterCalculator::PacketUpdate,
+											             totalRx));
+
 		Simulator::Stop (Seconds (simulationTime+1));
 		Simulator::Run ();
 
 		double throughput = GetThroughput(serverApp);
+		double avgTxPackets = GetAvgTxPackets(totalTx);
 
-		dataset.Add(d, throughput);
 
-		std::cout << "Distance: " << d << ", Throughput: " << throughput << " Mbps" << std::endl;
+		dataset_throughput.Add(d, throughput);
+		dataset_txPackets.Add(d, avgTxPackets);
+		
+
+		std::cout << "Distance: " << d << ", Throughput: " << throughput << " Mbps" \
+							<< ", AvgTxPackets: " << avgTxPackets << "K Packets/s" << std::endl;
 
 		Simulator::Destroy();
 
 	}
 
-	plot.AddDataset (dataset);
+	plot_throughput.AddDataset (dataset_throughput);
+	plot_txPackets.AddDataset (dataset_txPackets);
 
 }
 
@@ -150,19 +189,21 @@ int main(int argc, char *argv[])
 	modes.push_back("HeMcs0");
 	modes.push_back("HeMcs1");
 	modes.push_back("HeMcs2");
-	modes.push_back("HeMcs3");
+	// modes.push_back("HeMcs3");
 	modes.push_back("HeMcs4");
-	modes.push_back("HeMcs5");
-	modes.push_back("HeMcs6");
+	// modes.push_back("HeMcs5");
+	// modes.push_back("HeMcs6");
 	modes.push_back("HeMcs7");
-	modes.push_back("HeMcs8");
+	// modes.push_back("HeMcs8");
 	modes.push_back("HeMcs9");
-	modes.push_back("HeMcs10");
+	// modes.push_back("HeMcs10");
 	modes.push_back("HeMcs11");
 
-	std::ofstream file ("80211ax-mimo-throughput.plt");
+	std::ofstream file_throughput ("80211ax-siso-throughput.plt");
+	std::ofstream file_txPackets ("80211ax-siso-txPackets.plt");
 
-	Gnuplot plot = Gnuplot ("80211ax-mimo-throughput.eps");
+	Gnuplot plot_throughput = Gnuplot ("80211ax-siso-throughput.eps");
+	Gnuplot plot_txPackets = Gnuplot ("80211ax-siso-txPackets.eps");
 
 	// TCP global setting
 	TypeId tcpTid;
@@ -172,14 +213,14 @@ int main(int argc, char *argv[])
 
 	for (uint32_t i = 0; i <modes.size(); i++) {
 		auto strMode = modes[i];
-		for (uint8_t nStreams=1; nStreams<5; nStreams++) {
-			RunSimulation(nStreams, plot, strMode);
+		for (uint8_t nStreams=1; nStreams<2; nStreams++) {
+			RunSimulation(nStreams, plot_throughput, plot_txPackets, strMode);
 		}
 	}
 
-	plot.SetTerminal ("postscript eps color enh \"Times-BoldItalic\"");
-  plot.SetLegend ("Distance (Meters)", "Throughput (Mbit/s)");
-  plot.SetExtra  ("set xrange [0:100]\n\
+	plot_throughput.SetTerminal ("postscript eps color enh \"Times-BoldItalic\"");
+  plot_throughput.SetLegend ("Distance (Meters)", "Throughput (Mbit/s)");
+  plot_throughput.SetExtra  ("set xrange [0:800]\n\
 set yrange [0:800]\n\
 set ytics 0,50,800\n\
 set style line 1 dashtype 1 linewidth 5\n\
@@ -189,50 +230,26 @@ set style line 4 dashtype 1 linewidth 5\n\
 set style line 5 dashtype 1 linewidth 5\n\
 set style line 6 dashtype 1 linewidth 5\n\
 set style line 7 dashtype 1 linewidth 5\n\
-set style line 8 dashtype 1 linewidth 5\n\
-set style line 9 dashtype 1 linewidth 5\n\
-set style line 10 dashtype 1 linewidth 5\n\
-set style line 11 dashtype 1 linewidth 5\n\
-set style line 12 dashtype 1 linewidth 5\n\
-set style line 13 dashtype 2 linewidth 5\n\
-set style line 14 dashtype 2 linewidth 5\n\
-set style line 15 dashtype 2 linewidth 5\n\
-set style line 16 dashtype 2 linewidth 5\n\
-set style line 17 dashtype 2 linewidth 5\n\
-set style line 18 dashtype 2 linewidth 5\n\
-set style line 19 dashtype 2 linewidth 5\n\
-set style line 20 dashtype 2 linewidth 5\n\
-set style line 21 dashtype 2 linewidth 5\n\
-set style line 22 dashtype 2 linewidth 5\n\
-set style line 23 dashtype 2 linewidth 5\n\
-set style line 24 dashtype 2 linewidth 5\n\
-set style line 25 dashtype 3 linewidth 5\n\
-set style line 26 dashtype 3 linewidth 5\n\
-set style line 27 dashtype 3 linewidth 5\n\
-set style line 28 dashtype 3 linewidth 5\n\
-set style line 29 dashtype 3 linewidth 5\n\
-set style line 30 dashtype 3 linewidth 5\n\
-set style line 31 dashtype 3 linewidth 5\n\
-set style line 32 dashtype 3 linewidth 5\n\
-set style line 33 dashtype 3 linewidth 5\n\
-set style line 34 dashtype 3 linewidth 5\n\
-set style line 35 dashtype 3 linewidth 5\n\
-set style line 36 dashtype 3 linewidth 5\n\
-set style line 37 dashtype 4 linewidth 5\n\
-set style line 38 dashtype 4 linewidth 5\n\
-set style line 39 dashtype 4 linewidth 5\n\
-set style line 40 dashtype 4 linewidth 5\n\
-set style line 41 dashtype 4 linewidth 5\n\
-set style line 42 dashtype 4 linewidth 5\n\
-set style line 43 dashtype 4 linewidth 5\n\
-set style line 44 dashtype 4 linewidth 5\n\
-set style line 45 dashtype 4 linewidth 5\n\
-set style line 46 dashtype 4 linewidth 5\n\
-set style line 47 dashtype 4 linewidth 5\n\
-set style line 48 dashtype 4 linewidth 5\n\
-set style increment user"                                                                                                                                                                                                                                                                                                                                   );
-  plot.GenerateOutput (file);
-  file.close ();
+set style increment user");
+
+	plot_throughput.GenerateOutput (file_throughput);
+  file_throughput.close ();
+
+	plot_txPackets.SetTerminal ("postscript eps color enh \"Times-BoldItalic\"");
+  plot_txPackets.SetLegend ("Distance (Meters)", "Tx Packets Count (K Packets/s)");
+  plot_txPackets.SetExtra  ("set xrange [0:800]\n\
+set yrange [0:800]\n\
+set ytics 0,50,800\n\
+set style line 1 dashtype 2 linewidth 5\n\
+set style line 2 dashtype 2 linewidth 5\n\
+set style line 3 dashtype 2 linewidth 5\n\
+set style line 4 dashtype 2 linewidth 5\n\
+set style line 5 dashtype 2 linewidth 5\n\
+set style line 6 dashtype 2 linewidth 5\n\
+set style line 7 dashtype 2 linewidth 5\n\
+set style increment user");
+  plot_txPackets.GenerateOutput (file_txPackets);
+  file_txPackets.close ();
 
 	return 0;
 }
