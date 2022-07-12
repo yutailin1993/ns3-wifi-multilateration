@@ -42,11 +42,12 @@ using namespace ns3;
 const std::string dlAckSeqTypeList[4] = {"ACK-SU-FORMAT", "MU-BAR", "AGGR-MU-BAR", "NO-OFDMA"};
 double distance = 0;
 double distanceSet[3] = {0, 50, 100};
-std::string expName = "11ax-ofdma-ACK-nSTA-Jitter-Ideal";
+std::string expName = "new-11ax-ofdma-groupDetail-nSTA-no-Jitter-Ideal";
 std::string udpInterval = "0.00012";
-bool enableJitter = true;
-bool useIdeal = false;
-bool diffGroup = false;
+int seedRound = 1;
+bool enableJitter = false;
+bool useIdeal = true;
+bool diffGroup = true;
 
 WifiOfdmaSettings::~WifiOfdmaSettings()
 {
@@ -122,10 +123,10 @@ WifiOfdmaSettings::SetupDevicePhy(bool isIdealManager, struct WifiPHYConfig conf
 								"Ssid", SsidValue(m_ssid));
 	m_apDevice = m_wifi.Install(m_spectrumWifiPhy, m_mac, m_wifiApNode);
 
-	uint64_t streamNumber = 1;
-	streamNumber += m_wifi.AssignStreams(m_apDevice, seed);
-	streamNumber += m_wifi.AssignStreams(m_staDevices, streamNumber);
-	
+	// uint64_t streamNumber = 50;
+	// streamNumber += m_wifi.AssignStreams(m_apDevice, streamNumber);
+	// streamNumber += m_wifi.AssignStreams(m_staDevices, streamNumber);
+
 	Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice> (m_apDevice.Get(0));
 	dev->GetMac()->SetAttribute("BE_MaxAmsduSize", UintegerValue(0));
 	dev->GetMac()->SetAttribute("BE_MaxAmpduSize", UintegerValue(10060));
@@ -303,7 +304,7 @@ void RunSimulation(std::string dlAckSeqType, Gnuplot &plot_throughput)
 
 	SetAckType(dlAckSeqType);
 
-	for (std::size_t nStations=1; nStations<=maxNumStations; nStations+=4) {
+	for (std::size_t nStations=18; nStations<=maxNumStations; nStations+=3) {
 		struct WifiPHYConfig conf;
 		if (dlAckSeqType != "NO-OFDMA") {
 			conf.phyModel = 1;
@@ -317,13 +318,18 @@ void RunSimulation(std::string dlAckSeqType, Gnuplot &plot_throughput)
 			conf.enableUlOfdma = false;
 		}
 
-		double all_throughput = 0.0;
+		// double all_throughput = 0.0;
+		double group_throughput[3] = {0.0, 0.0, 0.0};
 
-		for (uint64_t seed=1; seed <= 10; seed++) {
-			WifiOfdmaSettings ofdmaTest = WifiOfdmaSettings(nStations, false, dlAckSeqType);
+		for (uint64_t seed=1; seed <= seedRound; seed++) {
+			WifiOfdmaSettings ofdmaTest = WifiOfdmaSettings(nStations, diffGroup, dlAckSeqType);
 			ofdmaTest.CreateNodes();
 			ofdmaTest.SetupDevicePhy(useIdeal, conf, seed);
-			ofdmaTest.SetupMobility(distance);
+			if (!diffGroup) {
+				ofdmaTest.SetupMobility(distance);
+			} else {
+				ofdmaTest.SetupMobility(distanceSet);
+			}
 			// ofdmaTest.SetupMobility(distanceSet);
 			ofdmaTest.SetupApp();
 
@@ -334,21 +340,25 @@ void RunSimulation(std::string dlAckSeqType, Gnuplot &plot_throughput)
 
 			ApplicationContainer serverApp = ofdmaTest.GetServerApp();
 
-			all_throughput += GetThroughput(serverApp);
-			// double packetLoss = GetPacketLoss(serverApp, clientApps) / nStations;
+			std::cout << seed << std::endl;
 
-			// for (int i=0; i<3; i++) {
-			// 	double throughput = GetStaGroupThroughput(serverApp, i, nStations);
-			// 	dataset_throughput.Add(distanceSet[i], throughput);
-			// 	std::cout << "Group dist: " << distanceSet[i] << ", group avg throughput: " << throughput << " Mbps" << std::endl;
-			// }
+			// all_throughput += GetThroughput(serverApp);
+
+			for (int i=0; i<3; i++) {
+				group_throughput[i] += GetStaGroupThroughput(serverApp, i, nStations);
+			}
 
 			Simulator::Destroy();
 		}
-		all_throughput /= 10;
-		dataset_throughput.Add(nStations, all_throughput);
+		for (int i=0; i<3; i++) {
+				group_throughput[i] /= seedRound;
+				dataset_throughput.Add(distanceSet[i], group_throughput[i]);
+				std::cout << "Group dist: " << distanceSet[i] << ", group avg throughput: " << group_throughput[i] << " Mbps" << std::endl;
+		}
+		// all_throughput /= 10;
+		// dataset_throughput.Add(nStations, all_throughput);
 		// dataset_packetLoss.Add(nStations, packetLoss);
-		std::cout << "Num of stations: " << nStations << ", total throughput: " << all_throughput << " Mbps" << std::endl;
+		// std::cout << "Num of stations: " << nStations << ", total throughput: " << all_throughput << " Mbps" << std::endl;
 	}
 
 	plot_throughput.AddDataset(dataset_throughput);
@@ -373,11 +383,11 @@ int main (int argc, char *argv[])
 	}
 	
 	plot_throughput.SetTerminal ("postscript eps color enh \"Times-BoldItalic\"");
-  plot_throughput.SetLegend ("Stations numbers (#)", "Throughput (Mbit/s)");
-  plot_throughput.SetExtra  ("set xrange [0:20]\n\
+  plot_throughput.SetLegend ("Distance (#)", "Throughput (Mbit/s)");
+  plot_throughput.SetExtra  ("set xrange [0:100]\n\
 set yrange [0:60]\n\
 set ytics 10,5,60\n\
-set xtics 1,4,20\n\
+set xtics 1,50,100\n\
 set style line 1 dashtype 1 linewidth 5 pt 1 ps 1\n\
 set style line 2 dashtype 2 linewidth 5 pt 2 ps 1\n\
 set style line 3 dashtype 3 linewidth 5 pt 3 ps 1\n\
