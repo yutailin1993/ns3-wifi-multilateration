@@ -1200,6 +1200,11 @@ WifiActionHeader::SetAction (WifiActionHeader::CategoryValue type,
         m_actionValue = static_cast<uint8_t> (action.blockAck);
         break;
       }
+    case PUBLIC_ACTION:
+      {
+        m_actionValue = static_cast<uint8_t> (action.publicAction);
+        break;
+      }
     case MESH:
       {
         m_actionValue = static_cast<uint8_t> (action.meshAction);
@@ -1229,6 +1234,8 @@ WifiActionHeader::GetCategory ()
     {
     case BLOCK_ACK:
       return BLOCK_ACK;
+    case PUBLIC_ACTION:
+      return PUBLIC_ACTION;
     case MESH:
       return MESH;
     case MULTIHOP:
@@ -1345,6 +1352,22 @@ WifiActionHeader::GetAction ()
           retval.selfProtectedAction = PEER_LINK_OPEN; /* quiet compiler */
         }
       break;
+
+    case PUBLIC_ACTION:
+      switch (m_actionValue)
+        {
+        case FTM_REQUEST:
+          retval.publicAction = FTM_REQUEST;
+          break;
+        case FTM_RESPONSE:
+          retval.publicAction = FTM_RESPONSE;
+          break;
+        default:
+          NS_FATAL_ERROR ("Unknown public action code");
+          retval.selfProtectedAction = PEER_LINK_OPEN; /* quiet compiler */
+        }
+      break;
+
     default:
       NS_FATAL_ERROR ("Unsupported mesh action");
       retval.selfProtectedAction = PEER_LINK_OPEN; /* quiet compiler */
@@ -1375,6 +1398,10 @@ WifiActionHeader::CategoryValueToString (CategoryValue value) const
   if (value == BLOCK_ACK)
     {
       return "BlockAck";
+    }
+  else if (value == PUBLIC_ACTION)
+    {
+      return "PublicAction";
     }
   else if (value == MESH)
     {

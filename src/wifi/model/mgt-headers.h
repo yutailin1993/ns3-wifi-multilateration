@@ -896,6 +896,7 @@ public:
   enum CategoryValue //table 8-38 staring from IEEE 802.11, Part11, (Year 2012)
   {
     BLOCK_ACK = 3,
+    PUBLIC_ACTION = 4,           //Category Public Action, add for FTM support
     MESH = 13,                  //Category: Mesh
     MULTIHOP = 14,              //not used so far
     SELF_PROTECTED = 15,        //Category: Self Protected
@@ -948,6 +949,16 @@ public:
     BLOCK_ACK_DELBA = 2
   };
 
+  /**
+   * @brief Public Action fields for FTM
+   * See 802.11-2016 Table 9-307
+   */
+  enum PublicActionValue
+  {
+    FTM_REQUEST = 0x20,
+    FTM_RESPONSE = 0x21
+  };
+
 
   /**
    * typedef for union of different ActionValues
@@ -955,6 +966,7 @@ public:
   typedef union
   {
     MeshActionValue meshAction; ///< mesh action
+    PublicActionValue publicAction; //< public action used for FTM
     MultihopActionValue multihopAction; ///< multi hop action
     SelfProtectedActionValue selfProtectedAction; ///< self protected action
     BlockAckActionValue blockAck; ///< block ack
