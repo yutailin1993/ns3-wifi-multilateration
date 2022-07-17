@@ -1,5 +1,10 @@
-*
+/*
 
 !.gitignore
 !src/
+
+/scratch/CMakeLists.txt
+/scratch/random-variable-stream.cc
+/scratch/scratch-simulator.cc
+/scratch/subdir/
 !scratch/
