@@ -27,6 +27,7 @@
 #include "wifi-remote-station-manager.h"
 #include "qos-utils.h"
 #include "ssid.h"
+#include "ftm-manager.h"
 
 namespace ns3 {
 
@@ -411,6 +412,39 @@ public:
   bool GetHeSupported () const;
 
   /**
+   * @brief Enable or disable FTM, Used for the attribute system. Calls EnableFtm() and DisableFtm().
+   * Direct calls to EnableFtm() and DisableFtm() work as well.
+   * 
+   * @param enabled true if FTM should be enabled, false otherwise
+   */
+  void SetFtmEnabled (bool enabled);
+
+  /**
+   * @brief Return whether FTM is enabled or not.
+   * 
+   * @return true if FTM is enabled, false otherwise. 
+   */
+  bool GetFtmEnabled (void) const;
+
+  /**
+   * @brief Used to enable FTM support on this WifiMac 
+   */
+  void EnableFtm (void);
+
+  /**
+   * @brief Used to disable FTM support on this WifiMac 
+   */
+  void DisableFtm (void);
+
+  /**
+   * @brief Used to create a new FTM Session as initiator with the specified partner as the responder
+   * 
+   * @param partner 
+   * @return Ptr<FtmSession> 
+   */
+  Ptr<FtmSession> NewFtmSession (Mac48Address partner);
+
+  /**
    * Return the maximum A-MPDU size of the given Access Category.
    *
    * \param ac Access Category index
@@ -677,6 +711,14 @@ private:
   /** This is a map from Access Category index to the corresponding
   channel access function */
   EdcaQueues m_edca;
+
+  Ptr<FtmManager> m_ftm_manager; //!< FTM Manager for this WifiMac
+  bool m_ftm_enabled; //!< aIs set to \c true if this WifiMac has FTM enabled
+  /**
+   * This is used when the attribute system is used to enable FTM and WifiPhy has not yet been set.
+   * Will enables FTM as soon as the WifiPhy object has been set.
+   */
+  bool m_ftm_enable_later;
 
   uint16_t m_voMaxAmsduSize; ///< maximum A-MSDU size for AC_VO (in bytes)
   uint16_t m_viMaxAmsduSize; ///< maximum A-MSDU size for AC_VI (in bytes)

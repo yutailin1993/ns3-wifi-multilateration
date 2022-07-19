@@ -55,6 +55,10 @@ WifiMac::WifiMac ()
   m_txMiddle = Create<MacTxMiddle> ();
 
   m_channelAccessManager = CreateObject<ChannelAccessManager> ();
+
+  m_ftm_enabled = false;
+  m_ftm_enable_later = false;
+  m_ftm_manager = 0;
 }
 
 WifiMac::~WifiMac ()
@@ -311,6 +315,12 @@ WifiMac::GetTypeId (void)
                      "a BSRP Trigger Frame.",
                      MakeTraceSourceAccessor (&WifiMac::m_psduMapResponseTimeoutCallback),
                      "ns3::WifiMac::PsduMapResponseTimeoutCallback")
+    .AddAttribute ("FTM_Enabled",
+                   "Used to enable FTM exchange support.",
+                   BooleanValue (false),
+                   MakeBooleanAccessor (&WifiMac::SetFtmEnabled,
+                                        &WifiMac::GetFtmEnabled),
+                   MakeBooleanChecker ())
   ;
   return tid;
 }
@@ -365,6 +375,7 @@ WifiMac::DoDispose ()
   m_phy = 0;
 
   m_device = 0;
+  m_ftm_manager = 0;
 }
 
 void
@@ -770,6 +781,11 @@ WifiMac::SetWifiPhy (const Ptr<WifiPhy> phy)
   m_channelAccessManager->SetupPhyListener (phy);
   NS_ASSERT (m_feManager != 0);
   m_feManager->SetWifiPhy (phy);
+
+  if (m_ftm_enable_later) {
+    EnableFtm();
+    m_ftm_enable_later = false;
+  }
 }
 
 Ptr<WifiPhy>
@@ -1023,6 +1039,31 @@ WifiMac::Receive (Ptr<WifiMacQueueItem> mpdu)
             default:
               NS_FATAL_ERROR ("Unsupported Action field in Block Ack Action frame");
               return;
+            }
+          case WifiActionHeader::PUBLIC_ACTION: //Take care of FTM frames.
+            {
+              NS_ASSERT_MSG (m_ftm_enabled, "Received Public Action frame but FTM is not enabled!");
+              switch (actionHdr.GetAction().publicAction)
+                {
+                case WifiActionHeader::FTM_REQUEST:
+                  {
+                    FtmRequestHeader ftm_req;
+                    packet->RemoveHeader(ftm_req);
+                    m_ftm_manager->ReceivedFtmRequest(from, ftm_req);
+                    return;
+                  }
+                case WifiActionHeader::FTM_RESPONSE:
+                  {
+                    FtmResponseHeader ftm_res;
+                    packet->RemoveHeader (ftm_res);
+                    m_ftm_manager->ReceivedFtmResponse (from, ftm_res);
+                    return;
+                  }
+              
+                default:
+                  NS_FATAL_ERROR("Unsupported Public Aciton frame received!");
+                  return;
+                }
             }
         default:
           NS_FATAL_ERROR ("Unsupported Action frame received");
@@ -1423,6 +1464,65 @@ WifiMac::GetMaxAmsduSize (AcIndex ac) const
         return 0;
     }
   return maxSize;
+}
+
+void
+WifiMac::SetFtmEnabled (bool enabled)
+{
+  if (enabled) {
+    m_txop = CreateObject<Txop> ();
+    m_txop->SetChannelAccessManager (m_channelAccessManager);
+    m_txop->SetWifiMac (this);
+    m_txop->SetTxMiddle (m_txMiddle);
+    m_txop->SetDroppedMpduCallback (MakeCallback (&DroppedMpduTracedCallback::operator(),
+                                                      &m_droppedMpduCallback));
+    if (GetWifiPhy() == 0) {
+      m_ftm_enable_later = true;
+      return;
+    }
+    EnableFtm();
+  } else if (!enabled) {
+    DisableFtm();
+  }
+}
+
+bool
+WifiMac::GetFtmEnabled (void) const
+{
+  return m_ftm_enabled;
+}
+
+void
+WifiMac::EnableFtm (void)
+{
+  NS_LOG_FUNCTION (this);
+
+  m_ftm_manager = CreateObject<FtmManager> (GetWifiPhy(), GetTxop());
+  m_ftm_manager->SetMacAddress(GetAddress());
+  Time::Unit resolution = Time::GetResolution();
+
+  if (resolution != Time::PS && resolution != Time::FS) {
+    NS_LOG_WARN ("FTM enabled but time resolution not set to PS or FS, FTM results will be less accurate!");
+  }
+
+  m_ftm_enabled = true;
+}
+
+void WifiMac::DisableFtm (void)
+{
+  NS_LOG_FUNCTION (this);
+  m_ftm_manager = 0;
+  m_ftm_enabled = false;
+}
+
+Ptr<FtmSession>
+WifiMac::NewFtmSession (Mac48Address partner)
+{
+  NS_LOG_FUNCTION (this << partner);
+  if (m_ftm_enabled) {
+    return m_ftm_manager->CreateNewSession(partner, FtmSession::FTM_INITIATOR);
+  }
+  return 0;
 }
 
 } //namespace ns3
