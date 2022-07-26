@@ -22,17 +22,29 @@
 #include "ns3/rng-seed-manager.h"
 #include "ns3/random-variable-stream.h"
 
+#include <vector>
+#include <iostream>
 
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("FtmExample");
 
-int channelWidth = 80;
+enum EModel {
+	NO_ERROR,
+	WIRED_ERROR,
+	WIRELESS_ERROR
+};
+
+int channelWidth = 40;
 int numSimulations = 20;
+double distance = 8.0;
+uint8_t nBurst = 6;
+
+Ptr<WirelessFtmErrorModel::FtmMap> ftm_map = CreateObject<WirelessFtmErrorModel::FtmMap> ();
 
 void SessionOver (FtmSession session)
 {
-	NS_LOG_UNCOND ("Distance: " << session.GetMeanRTT()*pow(10, -12)*299792458/2);
+	NS_LOG_UNCOND ((session.GetMeanRTT()*pow(10, -12)*299792458/2) - distance << ",");
 }
 
 static WiredFtmErrorModel::ChannelBandwidth GetWiredErrorChannelBandwidth(int channelWidth)
@@ -56,7 +68,25 @@ static WiredFtmErrorModel::ChannelBandwidth GetWiredErrorChannelBandwidth(int ch
 	}
 }
 
-static void GenerateTraffic (Ptr<WifiNetDevice> ap, Ptr<WifiNetDevice> sta, Address recvAddr)
+static Ptr<WiredFtmErrorModel> GenerateWiredErrorModel()
+{
+	Ptr<WiredFtmErrorModel> error_model = CreateObject<WiredFtmErrorModel> ();
+	error_model->SetChannelBandwidth(GetWiredErrorChannelBandwidth(channelWidth));
+
+	return error_model;
+}
+
+static Ptr<WirelessFtmErrorModel> GenerateWirelessErrorModel(Ptr<WifiNetDevice> sta)
+{
+	Ptr<WirelessFtmErrorModel> error_model = CreateObject<WirelessFtmErrorModel> ();
+	error_model->SetFtmMap(ftm_map);
+	error_model->SetNode(sta->GetNode());
+	error_model->SetChannelBandwidth(GetWiredErrorChannelBandwidth(channelWidth));
+
+	return error_model;
+}
+
+static void GenerateTraffic (Ptr<WifiNetDevice> ap, Ptr<WifiNetDevice> sta, Address recvAddr, uint8_t nBurst, EModel e)
 {
 	Ptr<WifiMac> sta_mac = sta->GetMac()->GetObject<WifiMac>();
 	Mac48Address to = Mac48Address::ConvertFrom(recvAddr);
@@ -66,31 +96,45 @@ static void GenerateTraffic (Ptr<WifiNetDevice> ap, Ptr<WifiNetDevice> sta, Addr
 		NS_FATAL_ERROR ("FTM not enabled!");
 	}
 
-	//create wired (channel) error model
-	Ptr<WiredFtmErrorModel> wired_error = CreateObject<WiredFtmErrorModel>();
-	wired_error->SetChannelBandwidth(GetWiredErrorChannelBandwidth(channelWidth));
+	switch (e)
+	{
+	case EModel::WIRED_ERROR:
+		/* Deploy wired error model */
+		session->SetFtmErrorModel(GenerateWiredErrorModel());
+		break;
 
-	session->SetFtmErrorModel(wired_error);
+	case EModel::WIRELESS_ERROR:
+		/* Deploy wireless error model */
+		session->SetFtmErrorModel(GenerateWirelessErrorModel(sta));
+		break;
+	
+	case EModel::NO_ERROR:
+		/* Not deploy error model */
+		break;
+
+	default:
+		NS_FATAL_ERROR ("Undefined Error model!");
+	}
 
 	//create the parameter for this session and set them
 	FtmParams ftm_params;
 	ftm_params.SetStatusIndication(FtmParams::RESERVED);
 	ftm_params.SetStatusIndicationValue(0);
-	ftm_params.SetNumberOfBurstsExponent(2);
-	ftm_params.SetBurstDuration(7);
+	ftm_params.SetNumberOfBurstsExponent(nBurst);
+	ftm_params.SetBurstDuration(10);
 
 	ftm_params.SetMinDeltaFtm(10);
 	ftm_params.SetPartialTsfNoPref(true);
 	ftm_params.SetAsap(true);
 	ftm_params.SetFtmsPerBurst(2);
-	ftm_params.SetBurstPeriod(10);
+	ftm_params.SetBurstPeriod(1);
 
 	session->SetFtmParams(ftm_params);
 	session->SetSessionOverCallback(MakeCallback(&SessionOver));
 	session->SessionBegin();
 }
 
-void RunSimulation(uint32_t seed)
+void RunSimulation(uint32_t seed, uint8_t nBurst)
 {
 	double rss = -80;
 	RngSeedManager::SetSeed(seed);
@@ -103,7 +147,7 @@ void RunSimulation(uint32_t seed)
 
 
 	WifiHelper wifi;
-	wifi.SetStandard(WIFI_STANDARD_80211ax);
+	wifi.SetStandard(WIFI_STANDARD_80211n);
 
 	YansWifiPhyHelper wifiPhy;
 	wifiPhy.Set("RxGain", DoubleValue(0));
@@ -139,7 +183,7 @@ void RunSimulation(uint32_t seed)
 	MobilityHelper mobility;
 
 	Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator>();
-	positionAlloc->Add (Vector(8, 0, 0));
+	positionAlloc->Add (Vector(distance, 0, 0));
 	mobility.SetPositionAllocator (positionAlloc);
 	mobility.Install(c.Get(0));
 
@@ -157,7 +201,7 @@ void RunSimulation(uint32_t seed)
 	Ptr<WifiNetDevice> wifi_sta = sta->GetObject<WifiNetDevice>();
 
 	wifiPhy.EnablePcap("ftm-example", devices);
-	Simulator::ScheduleNow(&GenerateTraffic, wifi_ap, wifi_sta, recvAddr);
+	Simulator::ScheduleNow(&GenerateTraffic, wifi_ap, wifi_sta, recvAddr, nBurst);
 	
 
 	Simulator::Stop(Seconds (10.0));
@@ -167,9 +211,12 @@ void RunSimulation(uint32_t seed)
 
 int main (int argc, char *argv[])
 {
+	ftm_map->LoadMap("./src/wifi/ftm_map/20x20.map");
 	Time::SetResolution(Time::PS);
+	std::cout << "Channel width: " << channelWidth << ", No. Burst: " << pow(2, nBurst) << std::endl;
 	for (int i=0; i<numSimulations; i++) {
-		RunSimulation(i+1);
+		RunSimulation(i+1, nBurst);
 	}
+
 	return 0;
 }
