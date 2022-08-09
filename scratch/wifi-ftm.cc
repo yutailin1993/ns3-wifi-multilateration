@@ -37,8 +37,8 @@ enum EModel {
 
 int channelWidth = 40;
 int numSimulations = 20;
-double distance = 8.0;
-uint8_t nBurst = 6;
+double distance = 100.0;
+uint8_t nBurst = 4;
 
 Ptr<WirelessFtmErrorModel::FtmMap> ftm_map = CreateObject<WirelessFtmErrorModel::FtmMap> ();
 
@@ -134,7 +134,7 @@ static void GenerateTraffic (Ptr<WifiNetDevice> ap, Ptr<WifiNetDevice> sta, Addr
 	session->SessionBegin();
 }
 
-void RunSimulation(uint32_t seed, uint8_t nBurst)
+void RunSimulation(uint32_t seed, uint8_t nBurst, EModel e)
 {
 	double rss = -80;
 	RngSeedManager::SetSeed(seed);
@@ -161,7 +161,7 @@ void RunSimulation(uint32_t seed, uint8_t nBurst)
 
 	WifiMacHelper wifiMac;
 	wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-															 "DataMode", StringValue("HtMcs5"),
+															 "DataMode", StringValue("HtMcs4"),
 															 "ControlMode", StringValue("OfdmRate24Mbps"));
 
 	Ssid ssid = Ssid("wifi-default");
@@ -201,7 +201,7 @@ void RunSimulation(uint32_t seed, uint8_t nBurst)
 	Ptr<WifiNetDevice> wifi_sta = sta->GetObject<WifiNetDevice>();
 
 	wifiPhy.EnablePcap("ftm-example", devices);
-	Simulator::ScheduleNow(&GenerateTraffic, wifi_ap, wifi_sta, recvAddr, nBurst);
+	Simulator::ScheduleNow(&GenerateTraffic, wifi_ap, wifi_sta, recvAddr, nBurst, e);
 	
 
 	Simulator::Stop(Seconds (10.0));
@@ -211,12 +211,27 @@ void RunSimulation(uint32_t seed, uint8_t nBurst)
 
 int main (int argc, char *argv[])
 {
-	ftm_map->LoadMap("./src/wifi/ftm_map/20x20.map");
+	// ftm_map->LoadMap("./src/wifi/ftm_map/100x100.map");
 	Time::SetResolution(Time::PS);
-	std::cout << "Channel width: " << channelWidth << ", No. Burst: " << pow(2, nBurst) << std::endl;
-	for (int i=0; i<numSimulations; i++) {
-		RunSimulation(i+1, nBurst);
+
+	// int nBurst_list[5] = {1, 2, 4, 5, 6};
+	int dist_list[7] = {8, 16, 20, 30, 40, 50, 100};
+	int bw_list[2] = {20, 40};
+
+	for (int i=0; i<2; i++) {
+		for (int j=0; j<7; j++) {
+			channelWidth = bw_list[i];
+			distance = dist_list[j];
+			std::cout << "Channel width: " << channelWidth << ", No. Burst: " << pow(2, nBurst) << ", Distance: " << distance << std::endl;
+	
+			std::cout << "Wired Error Model" << std::endl;
+			for (int i=0; i<numSimulations; i++) {
+				RunSimulation(i+1, nBurst, EModel::WIRED_ERROR);
+			}
+		}
 	}
+
+	
 
 	return 0;
 }
