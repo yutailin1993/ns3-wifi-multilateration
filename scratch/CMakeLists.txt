@@ -44,7 +44,7 @@ function(create_scratch source_files)
   string(REPLACE "${PROJECT_SOURCE_DIR}" "${CMAKE_OUTPUT_DIRECTORY}"
                  scratch_directory ${scratch_absolute_directory}
   )
-  add_executable(${target_prefix}${scratch_name} "${source_files}")
+  add_executable(${target_prefix}${scratch_name} "${source_files}" "/Users/larry/Desktop/Research/GT/ns3-hands-on/ns-allinone-3.36/ns-3.36/scratch/multilateration-core.cc")
   if(${NS3_STATIC})
     target_link_libraries(
       ${target_prefix}${scratch_name} ${LIB_AS_NEEDED_PRE_STATIC}
