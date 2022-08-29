@@ -233,6 +233,22 @@ public:
   void SetOverrideCallback (Callback<void, Mac48Address, FtmRequestHeader> callback);
 
   /**
+   * Set session belonging for multilateration purpose.  
+   * 
+   * \param apID Access Point index
+   * \param staID Station index
+   */
+  void SetSessionBelonging (std::tuple<size_t, size_t> sessionPair);
+
+  /**
+   * Get Session belonging info 
+   * 
+   * \return the <apID, staID> pair to indicate the session belonging
+   */
+  std::tuple<size_t, size_t> GetSessionBelonging (void);
+
+
+  /**
    * Set the default parameters for this session. These are used when no parameters are set.
    *
    * \param params the FtmParams
@@ -282,6 +298,7 @@ private:
 
 
   std::map<uint8_t, Ptr<FtmDialog>> m_ftm_dialogs; //!< The FTM dialog map.
+  std::tuple<size_t, size_t> m_session_belonging; //!< The session belongs to which AP and STA
 
   Callback <void, Ptr<Packet>, WifiMacHeader> send_packet; //!< Send packet callback.
   Callback<void, Mac48Address> session_over_ftm_manager_callback; //!< Session over in the FtmManager callback.

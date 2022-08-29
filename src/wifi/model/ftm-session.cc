@@ -561,6 +561,18 @@ FtmSession::StartNextBurst (void)
 }
 
 void
+FtmSession::SetSessionBelonging (std::tuple<size_t, size_t> connectionPair)
+{
+  m_session_belonging = connectionPair;
+}
+
+std::tuple<size_t, size_t>
+FtmSession::GetSessionBelonging ()
+{
+  return m_session_belonging;
+}
+
+void
 FtmSession::SetSessionOverCallback (Callback<void, FtmSession> callback)
 {
   m_session_over_callback_set = true;
@@ -664,11 +676,16 @@ FtmSession::GetMeanRTT (void)
       return 0;
     }
   int64_t avg_rtt = 0;
+  int32_t size = m_rtt_list.size();
   for(int64_t curr : m_rtt_list)
     {
+      if (curr*pow(10, -12)*299792458/2 > 1000 or curr*pow(10, -12)*299792458/2 < 0) {
+        size -= 1;
+        continue;
+      }
       avg_rtt += curr;
     }
-  avg_rtt /= m_rtt_list.size ();
+  avg_rtt /= size;
   return avg_rtt;
 }
 

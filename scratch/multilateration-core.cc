@@ -21,27 +21,39 @@
 #include "ns3/gnuplot.h"
 #include "ns3/rng-seed-manager.h"
 #include "ns3/random-variable-stream.h"
+#include "ns3/udp-client-server-helper.h"
 
 #include "multilateration-core.h"
 
 #include <tuple>
 #include <vector>
+#include <tgmath.h>
+
+WifiStandard standard = WIFI_STANDARD_80211n;
+double rss = -80;
 
 void
 SessionOver(FtmSession in_session)
 {
-	NS_LOG_UNCOND ((in_session.GetMeanRTT()*pow(10, -12)*299792458/2) << ",");
+	std::tuple<size_t, size_t> connectionPair = in_session.GetSessionBelonging();
+	size_t apIdx = std::get<0>(connectionPair);
+	size_t staIdx = std::get<1>(connectionPair);
+	double distance = in_session.GetMeanRTT()*pow(10, -12)*299792458/2;
+
+	ApStaDistList.push_back({apIdx, staIdx, distance});
+
+	// NS_LOG_UNCOND ("AP: " << apIdx << ", STA: " << staIdx << ", Distance: " << distance);
 }
 
 /* WifiEnvironment class implementation */
 WifiEnvironment::~WifiEnvironment()
 {
 	m_apPositions.clear();
-	m_APDevices.clear();
-	m_STADevices.clear();
+	m_APDevicesList.clear();
+	m_STADevicesList.clear();
 	m_wifiAPs.clear();
 	m_wifiSTAs.clear();
-	m_recvAddrs.clear();
+	m_apAddrs.clear();
 
 	return;
 }
@@ -49,9 +61,15 @@ WifiEnvironment::~WifiEnvironment()
 void
 WifiEnvironment::CreateNodes()
 {
-	m_wifiNodes.Create( m_nAPs + m_nSTAs );
+	m_wifiApNodes.Create(m_nAPs);
 
-	return;
+	for (auto &staNodes : m_wifiStaNodeGroups) {
+		staNodes.Create(m_nSTAs / 3);
+		m_wifiStaNodes.Add(staNodes);
+	}
+
+	m_wifiNodes.Add(m_wifiApNodes);
+	m_wifiNodes.Add(m_wifiStaNodes);
 }
 
 void
@@ -59,25 +77,35 @@ WifiEnvironment::SetupDevicePhy(int64_t in_seed)
 {
 	m_wifi.SetStandard(standard);
 	std::ostringstream oss;
-	oss << "HeMcs" << m_mcs;
+	oss << "HtMcs" << m_mcs;
 
-	m_yansWifiPhy.Set("RxGain", DoubleValue(0));
+	// m_yansWifiPhy.Set("RxGain", DoubleValue(0));
 	m_yansWifiPhy.SetPcapDataLinkType(WifiPhyHelper::DLT_IEEE802_11_RADIO);
 
 	m_yansWifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
 	m_yansWifiChannel.AddPropagationLoss("ns3::FixedRssLossModel", "Rss", DoubleValue(rss));
+	// m_yansWifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel", "Frequency", DoubleValue (5e9));
+
 	m_yansWifiPhy.SetChannel(m_yansWifiChannel.Create());
 
-	m_wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-																 "DataMode", StringValue(oss.str()),
-																 "ControlMode", StringValue("OfdmRate24Mbps"));
+	m_wifi.SetRemoteStationManager("ns3::IdealWifiManager");
+	// m_wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+	// 															 "DataMode", StringValue(oss.str()),
+	// 															 "ControlMode", StringValue("OfdmRate24Mbps"));
 
 	m_wifiMac.SetType("ns3::AdhocWifiMac");
 
-	m_devices = m_wifi.Install(m_yansWifiPhy, m_wifiMac, m_wifiNodes);
+	for (size_t i=0; i<3; i++) {
+		m_staDeviceGroups[i] = m_wifi.Install(m_yansWifiPhy, m_wifiMac, m_wifiStaNodeGroups[i]);
+		m_staDevices.Add(m_staDeviceGroups[i]);
+	}
+	m_apDevices = m_wifi.Install(m_yansWifiPhy, m_wifiMac, m_wifiApNodes);
+	m_devices.Add(m_staDevices);
+	m_devices.Add(m_apDevices);
 
 	int64_t streamNumber = 10*in_seed;
-	streamNumber += m_wifi.AssignStreams(m_devices, streamNumber);
+	streamNumber += m_wifi.AssignStreams(m_staDevices, streamNumber);
+	streamNumber += m_wifi.AssignStreams(m_apDevices, streamNumber);
 }
 
 void
@@ -88,8 +116,14 @@ WifiEnvironment::SetRTSCTS(bool in_enableRTSCTS)
   Config::SetDefault ("ns3::WifiRemoteStationManager::RtsCtsThreshold", ctsThr);
 }
 
+NodeContainer
+WifiEnvironment::GetWifiNodes()
+{
+	return m_wifiNodes;
+}
+
 void
-WifiEnvironment::SetupMobility(Position in_staPosition)
+WifiEnvironment::SetupMobility()
 {
 	m_mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
 
@@ -101,17 +135,19 @@ WifiEnvironment::SetupMobility(Position in_staPosition)
 														 std::get<2>(posIter)));
 	}
 	m_mobility.SetPositionAllocator(m_apPosAlloc);
-	for (size_t i=0; i<m_nAPs; i++) {
-		m_mobility.Install(m_wifiNodes.Get(i));
-	}
+	m_mobility.Install(m_wifiNodes);
 
-	m_staPosAlloc = CreateObject<ListPositionAllocator> ();
-	m_staPosAlloc->Add(Vector(std::get<0>(in_staPosition),
-														std::get<1>(in_staPosition),
-														std::get<2>(in_staPosition)));
-	
+	m_staPosAlloc = 
+		CreateObjectWithAttributes<RandomDiscPositionAllocator> ("X", StringValue("20"),
+																														 "Y", StringValue("20"),
+																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=30]"));
 	m_mobility.SetPositionAllocator(m_staPosAlloc);
-	m_mobility.Install(m_wifiNodes.Get(m_nAPs + 0));
+	m_mobility.Install(m_wifiStaNodes);
+
+	for (size_t i=0; i<m_nSTAs; i++) {
+		Ptr<MobilityModel> mob = m_wifiStaNodes.Get(i)->GetObject<MobilityModel>();
+		m_staPositions.push_back({mob->GetPosition().x, mob->GetPosition().y, mob->GetPosition().z});
+	}
 }
 
 void
@@ -119,17 +155,64 @@ WifiEnvironment::SetupFTMEnv()
 {
 	// Set AP Devices, AP addresses, wifi AP devices
 	for (int i=0; i<m_nAPs; i++) {
-		m_APDevices.push_back(GetDevice(true, i));
-		m_recvAddrs.push_back(m_APDevices[i]->GetAddress());
-		m_wifiAPs.push_back(m_APDevices[i]->GetObject<WifiNetDevice> ());
+		m_APDevicesList.push_back(GetDevice(true, i));
+		m_apAddrs.push_back(m_APDevicesList[i]->GetAddress());
+		m_wifiAPs.push_back(m_APDevicesList[i]->GetObject<WifiNetDevice> ());
 	}
 	// Add STA devices, wifi STA devices
 	for (int i=0; i<m_nSTAs; i++) {
-		m_STADevices.push_back(GetDevice(false, i));
-		m_wifiSTAs.push_back(m_STADevices[i]->GetObject<WifiNetDevice> ());
+		m_STADevicesList.push_back(GetDevice(false, i));
+		m_staAddrs.push_back(m_STADevicesList[i]->GetAddress());
+		m_wifiSTAs.push_back(m_STADevicesList[i]->GetObject<WifiNetDevice> ());
 	}
 
-	m_yansWifiPhy.EnablePcap("multilateration", m_devices);
+	// m_yansWifiPhy.EnablePcap("multilateration", m_devices);
+}
+
+void
+WifiEnvironment::SetupApplication()
+{
+	m_stack.Install(m_wifiNodes);
+
+	m_ipv4Address.SetBase("192.168.1.0", "255.255.255.0");
+
+	for (size_t i=0; i<3; i++) {
+		m_staNodeGroupInterfaces[i] = m_ipv4Address.Assign(m_staDeviceGroups[i]);
+	}
+	m_apNodeInterfaces = m_ipv4Address.Assign(m_apDevices);
+
+	UdpServerHelper server(m_udpPort);
+	m_serverApp = server.Install(m_wifiStaNodes);
+	m_serverApp.Start(Seconds (0.0));
+	m_serverApp.Stop(Seconds (m_simulationTime));
+
+	for (size_t i=0; i<3; i++) {
+		uint32_t groupSize = m_wifiStaNodeGroups[i].GetN();
+		for (size_t j=0; j<groupSize; j++) {
+			UdpClientHelper client(m_staNodeGroupInterfaces[i].GetAddress(j), m_udpPort);
+			client.SetAttribute("MaxPackets", UintegerValue(4294967295u));
+			client.SetAttribute("Interval", TimeValue(Time(m_udpInterval)));
+			client.SetAttribute("PacketSize", UintegerValue(m_payloadSize));
+
+			ApplicationContainer clientApp = client.Install(m_wifiApNodes.Get(i));
+			clientApp.Start(Seconds(1.0));
+			clientApp.Stop(Seconds(m_simulationTime));
+
+			m_clientApps.push_back(clientApp);
+		}
+	}
+}
+
+ApplicationContainer
+WifiEnvironment::GetServerApps()
+{
+	return m_serverApp;
+}
+
+std::vector<ApplicationContainer>
+WifiEnvironment::GetClientApps()
+{
+	return m_clientApps;
 }
 
 std::vector<Ptr<WifiNetDevice>>
@@ -144,26 +227,34 @@ WifiEnvironment::GetWifiSTAs()
 	return m_wifiSTAs;
 }
 
+PositionList
+WifiEnvironment::GetSTAPositions()
+{
+	return m_staPositions;
+}
+
 AddressList
 WifiEnvironment::GetRecvAddress()
 {
-	return m_recvAddrs;
+	return m_apAddrs;
 }
 
 Ptr<NetDevice>
 WifiEnvironment::GetDevice(bool in_getAPs, int in_deviceNo)
 {
 	if (in_getAPs) {
-		return m_devices.Get(in_deviceNo);
+		return m_apDevices.Get(in_deviceNo);
 	} else {
-		return m_devices.Get(m_nAPs + in_deviceNo);
+		return m_staDevices.Get(in_deviceNo);
 	}
 }
 
 /* Multilateration class implementation */
 Multilateration::~Multilateration()
 {
-	m_ftmMap->~FtmMap();
+	if (m_ftmMap != NULL) {
+		m_ftmMap->~FtmMap();
+	}
 	m_ftmParams.~FtmParams();
 }
 
@@ -188,7 +279,7 @@ Multilateration::GenerateWirelessErrorModel(Ptr<WifiNetDevice> in_sta)
 }
 
 Ptr<FtmSession>
-Multilateration::GenerateFTMSession(Ptr<WifiNetDevice> in_AP, Ptr<WifiNetDevice> in_STA, Address in_recvAddr)
+Multilateration::GenerateFTMSession(std::tuple<size_t, size_t> in_connectionPair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr)
 {
 	Ptr<WifiMac> staMac = in_STA->GetMac()->GetObject<WifiMac> ();
 	Mac48Address toAddr = Mac48Address::ConvertFrom(in_recvAddr);
@@ -212,7 +303,7 @@ Multilateration::GenerateFTMSession(Ptr<WifiNetDevice> in_AP, Ptr<WifiNetDevice>
 			NS_FATAL_ERROR ("Undefined Error Model!");
 	}
 
-
+	session->SetSessionBelonging(in_connectionPair);
 	session->SetFtmParams(m_ftmParams);
 	session->SetSessionOverCallback(MakeCallback(&SessionOver));
 	
@@ -229,11 +320,12 @@ void
 Multilateration::ConstructAllSessions(EnvConfig in_envConf, WifiNetDevicesList in_APs, WifiNetDevicesList in_STAs, AddressList in_recvAddrs)
 {
 	for (size_t i=0; i<in_envConf.nSTAs; i++) {
-		for (size_t j=0; j<in_envConf.nAPs; j++) {
-			Ptr<WifiNetDevice> sta =  in_STAs[i];
+		for (size_t j=0; j<3; j++) {
+			Ptr<WifiNetDevice> sta = in_STAs[i];
 			Ptr<WifiNetDevice> ap = in_APs[j];
 			Address recvAddr = in_recvAddrs[j];
-			m_sessionList.push_back(GenerateFTMSession(ap, sta, recvAddr));
+			std::tuple<size_t, size_t> connectionPair = {j, i};
+			m_sessionList.push_back(GenerateFTMSession(connectionPair, sta, recvAddr));
 		}
 	}
 }
@@ -260,23 +352,30 @@ Ptr<WirelessFtmErrorModel::FtmMap>
 Multilateration::LoadWirelessErrorMap()
 {
 	Ptr<WirelessFtmErrorModel::FtmMap> ftmMap = CreateObject<WirelessFtmErrorModel::FtmMap> ();
-	ftmMap->LoadMap("./src/wifi/ftm_map/100x100.map");
+	ftmMap->LoadMap("./src/wifi/ftm_map/20x20.map");
 
 	return ftmMap;
 }
 
 void
-Multilateration::SetFTMParams(uint8_t in_nBursts)
+Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
 {
+	const uint16_t numOfMiniSec = 10; // 1 sec
+	int totalBursts = int (in_nBurstsPerSecond*in_simulationTime);
+	// int totalBursts = 54;
+	int burstExponent = int (log2(totalBursts));
+
+	std::cout << "Burst Exponent: " << burstExponent << std::endl;
+
 	m_ftmParams.SetStatusIndication(FtmParams::RESERVED);
 	m_ftmParams.SetStatusIndicationValue(0);
-	m_ftmParams.SetNumberOfBurstsExponent(in_nBursts);
+	m_ftmParams.SetNumberOfBurstsExponent(burstExponent);
 	m_ftmParams.SetBurstDuration(10);
 
 	m_ftmParams.SetMinDeltaFtm(10);
 	m_ftmParams.SetPartialTsfNoPref(true);
 	m_ftmParams.SetAsap(true);
-	m_ftmParams.SetFtmsPerBurst(2);
-	m_ftmParams.SetBurstPeriod(1);
+	m_ftmParams.SetFtmsPerBurst(10);
+	m_ftmParams.SetBurstPeriod((numOfMiniSec/in_nBurstsPerSecond));
 }
 
