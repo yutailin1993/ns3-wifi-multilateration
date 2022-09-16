@@ -153,6 +153,7 @@ class Multilateration
 
 		void SetFTMParams(int in_nBursts, double in_simulationTime);
 		void ConstructAllSessions(EnvConfig in_envConf, WifiNetDevicesList in_APs, WifiNetDevicesList in_STAs, AddressList in_recvAddrs);
+		void EndAllSessions();
 
 		SessionList GetAllSessions();
 

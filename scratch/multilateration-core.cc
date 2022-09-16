@@ -29,7 +29,7 @@
 #include <vector>
 #include <tgmath.h>
 
-WifiStandard standard = WIFI_STANDARD_80211n;
+WifiStandard standard = WIFI_STANDARD_80211ax;
 double rss = -80;
 
 void
@@ -42,7 +42,7 @@ SessionOver(FtmSession in_session)
 
 	ApStaDistList.push_back({apIdx, staIdx, distance});
 
-	// NS_LOG_UNCOND ("AP: " << apIdx << ", STA: " << staIdx << ", Distance: " << distance);
+	std::cout << "AP: " << apIdx << ", STA: " << staIdx << ", Session Count: " << in_session.GetIndividualRTT().size() << ", Distance: " << distance << std::endl;
 }
 
 /* WifiEnvironment class implementation */
@@ -87,6 +87,8 @@ WifiEnvironment::SetupDevicePhy(int64_t in_seed)
 	// m_yansWifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel", "Frequency", DoubleValue (5e9));
 
 	m_yansWifiPhy.SetChannel(m_yansWifiChannel.Create());
+
+	m_yansWifiPhy.Set("ChannelSettings", StringValue ("{0, 80, BAND_5GHZ, 0}"));
 
 	m_wifi.SetRemoteStationManager("ns3::IdealWifiManager");
 	// m_wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
@@ -256,6 +258,7 @@ Multilateration::~Multilateration()
 		m_ftmMap->~FtmMap();
 	}
 	m_ftmParams.~FtmParams();
+	ApStaDistList.clear();
 }
 
 Ptr<WiredFtmErrorModel>
@@ -361,7 +364,7 @@ void
 Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
 {
 	const uint16_t numOfMiniSec = 10; // 1 sec
-	int totalBursts = int (in_nBurstsPerSecond*in_simulationTime);
+	int totalBursts = int (in_nBurstsPerSecond*in_simulationTime-1);
 	// int totalBursts = 54;
 	int burstExponent = int (log2(totalBursts));
 
@@ -379,3 +382,12 @@ Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
 	m_ftmParams.SetBurstPeriod((numOfMiniSec/in_nBurstsPerSecond));
 }
 
+void
+Multilateration::EndAllSessions()
+{
+	for (auto &sessionIter : m_sessionList) {
+		if (!sessionIter->GetSessionEnded()) {
+			sessionIter->CallEndSession();
+		}
+	}
+}

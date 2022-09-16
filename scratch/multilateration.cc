@@ -22,21 +22,21 @@ using namespace ns3;
  */
 typedef std::tuple<double, double, double, double> MatrixForm2D;
 
-const PositionList glob_staPosList = {
-	{3, 1, 0},
-	{10, 7, 0},
-	{16, 2, 0},
-	{19, 8, 0},
-	{7, 18, 0},
-	{13, 8, 0},
-	{2, 3, 0},
-	{7, 12, 0},
-	{1, 11, 0},
-	{18, 2, 0},
-	{7, 19, 0},
-	{6, 8, 0},
-	{10, 10, 0}
-};
+// const PositionList glob_staPosList = {
+// 	{3, 1, 0},
+// 	{10, 7, 0},
+// 	{16, 2, 0},
+// 	{19, 8, 0},
+// 	{7, 18, 0},
+// 	{13, 8, 0},
+// 	{2, 3, 0},
+// 	{7, 12, 0},
+// 	{1, 11, 0},
+// 	{18, 2, 0},
+// 	{7, 19, 0},
+// 	{6, 8, 0},
+// 	{10, 10, 0}
+// };
 
 MatrixForm2D
 InverseMatrix(MatrixForm2D in_matrix)
@@ -159,7 +159,7 @@ RunSession(Ptr<FtmSession> in_session)
 void
 RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_envConf, UdpConfig in_udpConfig, double in_simulationTime)
 {
-	PositionList staPosList(glob_staPosList.begin(), glob_staPosList.begin()+in_envConf.nSTAs);
+	// PositionList staPosList(glob_staPosList.begin(), glob_staPosList.begin()+in_envConf.nSTAs);
 
 	RngSeedManager::SetSeed(in_seed);
 	RngSeedManager::SetRun(in_seed);
@@ -194,11 +194,14 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 		Simulator::ScheduleNow(&RunSession, session);
 	}
 	
-	// Simulator::Schedule (Seconds (0.0), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
+	Simulator::Schedule (Seconds (0.0), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
 	Simulator::Stop(Seconds (in_simulationTime+1));
 	Simulator::Run();
 	
 	ApplicationContainer serverApp = wifiEnv.GetServerApps();
+
+	positioning.EndAllSessions();
+
 	double appThroughput = 0.0;
 
 
@@ -209,6 +212,8 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	double avgAppThroughput = appThroughput / in_envConf.nSTAs;
 
 	std::cout << avgAppThroughput << "," << std::endl;
+
+	std::cout << ApStaDistList.size() << std::endl;
 
 	// for (int i=0; i<in_envConf.nSTAs; i++) {
 	// 	Position staPos = CalculatePosition(i, in_envConf);
@@ -225,7 +230,7 @@ main(int argc, char *argv[])
 	
 	std::cout << "begin simulation" << std::endl;
 
-	for (size_t staPerAP=1; staPerAP<8; staPerAP++) {
+	for (size_t staPerAP=2; staPerAP<8; staPerAP++) {
 		std::cout << "Station Num: " << staPerAP*3 << std::endl;
 		
 		EnvConfig envConf = {
@@ -238,8 +243,6 @@ main(int argc, char *argv[])
 			1500, // payloadSize
 			"0.0012" // udpInterval
 		};
-
-		std::cout << "Burst Num: 64" << std::endl;
 
 		for (int simNum=10; simNum<11; simNum++) {
 			RunSimulation(simNum, 6, EModel::WIRED_ERROR, envConf, udpConf, simulationTime);

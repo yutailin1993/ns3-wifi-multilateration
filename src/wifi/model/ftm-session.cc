@@ -61,6 +61,7 @@ FtmSession::FtmSession ()
   m_session_active = false;
   m_ftm_error_model = CreateObject<FtmErrorModel> ();
   m_live_rtt_enabled = false;
+  m_session_ended = false;
   CreateDefaultFtmParams ();
 
   send_packet = MakeNullCallback <void, Ptr<Packet>, WifiMacHeader> ();
@@ -77,6 +78,7 @@ FtmSession::~FtmSession ()
   m_rtt_list.clear();
   m_ftm_dialogs.clear();
   m_current_dialog = 0;
+  m_session_ended = false;
 
 
   send_packet = MakeNullCallback <void, Ptr<Packet>, WifiMacHeader> ();
@@ -762,6 +764,18 @@ FtmSession::TriggerReceived (void)
 }
 
 void
+FtmSession::CallEndSession()
+{
+  EndSession();
+}
+
+bool
+FtmSession::GetSessionEnded()
+{
+  return m_session_ended;
+}
+
+void
 FtmSession::EndSession (void)
 {
   m_session_active = false;
@@ -770,6 +784,7 @@ FtmSession::EndSession (void)
 //  if (m_session_over_callback_set && m_session_type == FTM_INITIATOR) //to fix break from session_override
   if (m_session_over_callback_set)
     {
+      m_session_ended = true;
       session_over_callback (*this);
     }
 }

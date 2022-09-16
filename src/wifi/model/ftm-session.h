@@ -255,6 +255,10 @@ public:
    */
   void SetDefaultFtmParams (FtmParams params);
 
+  void CallEndSession();
+
+  bool GetSessionEnded();
+
   /**
    * Set the default parameters for this session. These are used when no parameters are set.
    * This method is used by the attribute system so a user can specify default FTM parameters for all created sessions,
@@ -291,6 +295,8 @@ private:
   bool m_live_rtt_enabled; //!< If live RTT is enabled.
 
   bool m_session_over_callback_set; //!< If a session over callback has been specified.
+
+  bool m_session_ended;
 
   Ptr<FtmErrorModel> m_ftm_error_model; //!< The FTM error model.
 
