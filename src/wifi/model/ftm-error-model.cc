@@ -136,7 +136,8 @@ WiredFtmErrorModel::SetChannelBandwidth (ChannelBandwidth bandwidth)
       m_standard_deviation = m_standard_deviation_40MHz;
       break;
     case Channel_80_MHz:
-      return;
+      m_standard_deviation = m_standard_deviation_80MHz;
+      break;
     case Channel_160_MHz:
       return;
   }

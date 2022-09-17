@@ -56,10 +56,10 @@ enum EModel {
 };
 
 const PositionList APPositionCandidate = {
-	{0, 0, 0},
-	{20, 20, 0},
-	{20, 0, 0},
-	{0, 20, 0}
+	{0, 10, 0},
+	{-10, 0, 0},
+	{10, 0, 0},
+	{0, -10, 0}
 };
 
 class WifiEnvironment
@@ -96,7 +96,10 @@ class WifiEnvironment
 		WifiNetDevicesList GetWifiSTAs();
 		NodeContainer GetWifiNodes();
 		AddressList GetRecvAddress();
-		PositionList GetSTAPositions();
+		PositionList GetStaPositions();
+		PositionList GetApPositions();
+
+
 
 		ApplicationContainer GetServerApps();
 		std::vector<ApplicationContainer> GetClientApps();
@@ -107,8 +110,6 @@ class WifiEnvironment
 		uint32_t m_payloadSize;
 		double m_simulationTime;
 		std::string m_udpInterval;
-
-		PositionList m_apPositions;
 
 		std::size_t m_nSTAs;
 		std::size_t m_nAPs;
@@ -125,7 +126,7 @@ class WifiEnvironment
 		MobilityHelper m_mobility;
 		Ptr<ListPositionAllocator> m_apPosAlloc;
 		Ptr<RandomDiscPositionAllocator> m_staPosAlloc;
-		PositionList m_staPositions;
+		PositionList m_staPositions, m_apPositions;
 
 		InternetStackHelper m_stack;
 		Ipv4InterfaceContainer m_staNodeGroupInterfaces[3], m_apNodeInterfaces;

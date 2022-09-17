@@ -22,22 +22,6 @@ using namespace ns3;
  */
 typedef std::tuple<double, double, double, double> MatrixForm2D;
 
-// const PositionList glob_staPosList = {
-// 	{3, 1, 0},
-// 	{10, 7, 0},
-// 	{16, 2, 0},
-// 	{19, 8, 0},
-// 	{7, 18, 0},
-// 	{13, 8, 0},
-// 	{2, 3, 0},
-// 	{7, 12, 0},
-// 	{1, 11, 0},
-// 	{18, 2, 0},
-// 	{7, 19, 0},
-// 	{6, 8, 0},
-// 	{10, 10, 0}
-// };
-
 MatrixForm2D
 InverseMatrix(MatrixForm2D in_matrix)
 {
@@ -104,7 +88,7 @@ LeastSquareError2D(PositionList apPosList, double distArray[])
 }
 
 Position
-CalculatePosition(size_t in_staIdx, EnvConfig in_envConf)
+CalculatePosition(size_t in_staIdx, EnvConfig in_envConf, PositionList in_apPosList)
 {
 	double distArray[in_envConf.nAPs];
 	for (size_t i=0; i<in_envConf.nAPs; i++) {
@@ -116,9 +100,17 @@ CalculatePosition(size_t in_staIdx, EnvConfig in_envConf)
 	}
 
 	/* Calculate Distance */
-	PositionList apPosList (APPositionCandidate.begin(), APPositionCandidate.begin()+in_envConf.nAPs);
+	return LeastSquareError2D(in_apPosList, distArray);
+}
 
-	return LeastSquareError2D(apPosList, distArray);
+double
+CalculatePosDiff(Position in_staGroundTruthPos, Position in_staEstimatePos)
+{
+	double x_diff = std::get<0>(in_staGroundTruthPos) - std::get<0>(in_staEstimatePos);
+	double y_diff = std::get<1>(in_staGroundTruthPos) - std::get<1>(in_staEstimatePos);
+	double err_dist = sqrt(pow(x_diff, 2) + pow(y_diff, 2));
+
+	return err_dist;
 }
 
 double
@@ -156,7 +148,7 @@ RunSession(Ptr<FtmSession> in_session)
 	in_session->SessionBegin();
 }
 
-void
+std::tuple<double, double, double>
 RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_envConf, UdpConfig in_udpConfig, double in_simulationTime)
 {
 	// PositionList staPosList(glob_staPosList.begin(), glob_staPosList.begin()+in_envConf.nSTAs);
@@ -202,8 +194,10 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 
 	positioning.EndAllSessions();
 
-	double appThroughput = 0.0;
+	PositionList staGroundTruthPosList = wifiEnv.GetStaPositions();
+	PositionList apPosList = wifiEnv.GetApPositions();
 
+	double appThroughput = 0.0;
 
 	appThroughput += GetThroughput(serverApp, in_udpConfig.payloadSize, in_simulationTime);
 
@@ -211,14 +205,18 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 		
 	double avgAppThroughput = appThroughput / in_envConf.nSTAs;
 
-	std::cout << avgAppThroughput << "," << std::endl;
+	// std::cout << avgAppThroughput << "," << std::endl;
 
-	std::cout << ApStaDistList.size() << std::endl;
+	double totalErr = 0.0;
+	for (int i=0; i<in_envConf.nSTAs; i++) {
+		totalErr += CalculatePosDiff(staGroundTruthPosList[i], CalculatePosition(i, in_envConf, apPosList));
+	}
 
-	// for (int i=0; i<in_envConf.nSTAs; i++) {
-	// 	Position staPos = CalculatePosition(i, in_envConf);
-	// 	std::cout << "STA " << i << " Pos: {" << std::get<0>(staPos) << ", " << std::get<1>(staPos) <<  ", 0}" << std::endl;
-	// }
+	return {
+		appThroughput,
+		avgAppThroughput,
+		totalErr/in_envConf.nSTAs
+		};
 }
 
 int
@@ -226,26 +224,42 @@ main(int argc, char *argv[])
 {
 	Time::SetResolution(Time::PS);
 
-	const double simulationTime = 9.0;
+	const double simulationTime = 8.0;
+
 	
 	std::cout << "begin simulation" << std::endl;
 
-	for (size_t staPerAP=2; staPerAP<8; staPerAP++) {
-		std::cout << "Station Num: " << staPerAP*3 << std::endl;
+	size_t staPerAP = 10;
+	for (int bps=2; bps<3; bps*=2) {
+		std::cout << "Burst Per Second: " << bps << std::endl;
+		std::vector<std::tuple<double, double, double>> resultsList;
 		
 		EnvConfig envConf = {
 			3, // nAPs
 			3*staPerAP, // nSTAs
 			4, // mcs
-			40 // channelWidth
+			80 // channelWidth
 		};
 		UdpConfig udpConf = {
 			1500, // payloadSize
 			"0.0012" // udpInterval
 		};
 
-		for (int simNum=10; simNum<11; simNum++) {
-			RunSimulation(simNum, 6, EModel::WIRED_ERROR, envConf, udpConf, simulationTime);
+		for (int simNum=1; simNum<11; simNum++) {
+			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRED_ERROR, envConf, udpConf, simulationTime));
+		}
+
+		std::cout << "TotalThroughput" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<0>(tupItr) << "," << std::endl;
+		}
+		std::cout << "AvgThroughput" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<1>(tupItr) << "," << std::endl;
+		}
+		std::cout << "DistErr" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<2>(tupItr) << "," << std::endl;
 		}
 	}
 	

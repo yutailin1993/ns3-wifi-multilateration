@@ -42,7 +42,7 @@ SessionOver(FtmSession in_session)
 
 	ApStaDistList.push_back({apIdx, staIdx, distance});
 
-	std::cout << "AP: " << apIdx << ", STA: " << staIdx << ", Session Count: " << in_session.GetIndividualRTT().size() << ", Distance: " << distance << std::endl;
+	// std::cout << "AP: " << apIdx << ", STA: " << staIdx << ", Successful FTM Count: " << in_session.GetIndividualRTT().size() << ", Distance: " << distance << std::endl;
 }
 
 /* WifiEnvironment class implementation */
@@ -137,14 +137,19 @@ WifiEnvironment::SetupMobility()
 														 std::get<2>(posIter)));
 	}
 	m_mobility.SetPositionAllocator(m_apPosAlloc);
-	m_mobility.Install(m_wifiNodes);
+	m_mobility.Install(m_wifiApNodes);
 
 	m_staPosAlloc = 
-		CreateObjectWithAttributes<RandomDiscPositionAllocator> ("X", StringValue("20"),
-																														 "Y", StringValue("20"),
+		CreateObjectWithAttributes<RandomDiscPositionAllocator> ("X", StringValue("0"),
+																														 "Y", StringValue("0"),
 																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=30]"));
 	m_mobility.SetPositionAllocator(m_staPosAlloc);
 	m_mobility.Install(m_wifiStaNodes);
+	
+	for (size_t i=0; i<m_nAPs; i++) {
+		Ptr<MobilityModel> mob = m_wifiApNodes.Get(i)->GetObject<MobilityModel>();
+		m_apPositions.push_back({mob->GetPosition().x, mob->GetPosition().y, mob->GetPosition().z});
+	}
 
 	for (size_t i=0; i<m_nSTAs; i++) {
 		Ptr<MobilityModel> mob = m_wifiStaNodes.Get(i)->GetObject<MobilityModel>();
@@ -230,9 +235,15 @@ WifiEnvironment::GetWifiSTAs()
 }
 
 PositionList
-WifiEnvironment::GetSTAPositions()
+WifiEnvironment::GetStaPositions()
 {
 	return m_staPositions;
+}
+
+PositionList
+WifiEnvironment::GetApPositions()
+{
+	return m_apPositions;
 }
 
 AddressList
@@ -364,11 +375,9 @@ void
 Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
 {
 	const uint16_t numOfMiniSec = 10; // 1 sec
-	int totalBursts = int (in_nBurstsPerSecond*in_simulationTime-1);
+	int totalBursts = int (in_nBurstsPerSecond*in_simulationTime);
 	// int totalBursts = 54;
 	int burstExponent = int (log2(totalBursts));
-
-	std::cout << "Burst Exponent: " << burstExponent << std::endl;
 
 	m_ftmParams.SetStatusIndication(FtmParams::RESERVED);
 	m_ftmParams.SetStatusIndicationValue(0);
