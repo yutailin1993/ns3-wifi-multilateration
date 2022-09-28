@@ -47,6 +47,7 @@ typedef std::vector<std::tuple<size_t, size_t, double>> DistList;
 /* variable definitation */
 
 inline DistList ApStaDistList;
+inline std::vector<int> DialogsCntList;
 // std::string strChannelSettings = "{36, " + std::to_string(channelWidth) + ", BAND_5GHZ, 0}";
 
 enum EModel {

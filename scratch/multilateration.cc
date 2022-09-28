@@ -129,11 +129,15 @@ GetThroughput(ApplicationContainer in_serverApp, uint32_t in_payloadSize, double
 }
 
 double
-GetPacketLoss(ApplicationContainer in_serverApp, ApplicationContainer in_clientApps[], uint32_t in_payloadSize)
+GetPacketLoss(ApplicationContainer in_serverApp, std::vector<ApplicationContainer> in_clientApps, uint32_t in_payloadSize)
 {
 	uint64_t rxPackets = 0, txPackets = 0;
 	for (size_t i=0; i<in_serverApp.GetN(); i++) {
 		rxPackets += DynamicCast<UdpServer> (in_serverApp.Get(i))->GetReceived();
+	}
+
+	size_t cleintSize = in_clientApps.size();
+	for (size_t i=0; i<cleintSize; i++) {
 		txPackets += DynamicCast<UdpClient> (in_clientApps[i].Get(0))->GetTotalTx() / in_payloadSize;
 	}
 
@@ -148,7 +152,7 @@ RunSession(Ptr<FtmSession> in_session)
 	in_session->SessionBegin();
 }
 
-std::tuple<double, double, double>
+std::tuple<double, double, double, double, double>
 RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_envConf, UdpConfig in_udpConfig, double in_simulationTime)
 {
 	// PositionList staPosList(glob_staPosList.begin(), glob_staPosList.begin()+in_envConf.nSTAs);
@@ -191,6 +195,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	Simulator::Run();
 	
 	ApplicationContainer serverApp = wifiEnv.GetServerApps();
+	std::vector<ApplicationContainer> clientAppList = wifiEnv.GetClientApps();
 
 	positioning.EndAllSessions();
 
@@ -200,6 +205,8 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	double appThroughput = 0.0;
 
 	appThroughput += GetThroughput(serverApp, in_udpConfig.payloadSize, in_simulationTime);
+
+	double packetLossRate = GetPacketLoss(serverApp, clientAppList, 1500);
 
 	Simulator::Destroy();
 		
@@ -212,10 +219,18 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 		totalErr += CalculatePosDiff(staGroundTruthPosList[i], CalculatePosition(i, in_envConf, apPosList));
 	}
 
+	double ftmDiaglossRate = 0.0;
+	int totalSessionsNum = DialogsCntList.size(); 
+	for (int i=0; i<totalSessionsNum; i++) {
+		ftmDiaglossRate += double(in_nBursts * 10 * in_simulationTime - DialogsCntList[i]) / double(in_nBursts * 10 * in_simulationTime);
+	}
+
 	return {
 		appThroughput,
 		avgAppThroughput,
-		totalErr/in_envConf.nSTAs
+		totalErr/in_envConf.nSTAs,
+		packetLossRate,
+		ftmDiaglossRate
 		};
 }
 
@@ -229,10 +244,11 @@ main(int argc, char *argv[])
 	
 	std::cout << "begin simulation" << std::endl;
 
-	size_t staPerAP = 10;
-	for (int bps=2; bps<3; bps*=2) {
-		std::cout << "Burst Per Second: " << bps << std::endl;
-		std::vector<std::tuple<double, double, double>> resultsList;
+	// size_t staPerAP = 10;
+	int bps = 2;
+	for (size_t staPerAP=2; staPerAP<15; staPerAP+=2) {
+		std::cout << "# STA: " << staPerAP*3 << ", Burst Per Second: " << bps << std::endl;
+		std::vector<std::tuple<double, double, double, double, double>> resultsList;
 		
 		EnvConfig envConf = {
 			3, // nAPs
@@ -249,6 +265,15 @@ main(int argc, char *argv[])
 			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRED_ERROR, envConf, udpConf, simulationTime));
 		}
 
+		std::cout << "PacketLossRate" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<0>(tupItr) << "," << std::endl;
+		}
+		std::cout << "FtmDialogLossRate" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<1>(tupItr) << "," << std::endl;
+		}
+		
 		std::cout << "TotalThroughput" << std::endl;
 		for (auto &tupItr : resultsList) {
 			std::cout << std::get<0>(tupItr) << "," << std::endl;
