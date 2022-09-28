@@ -43,6 +43,9 @@ SessionOver(FtmSession in_session)
 	ApStaDistList.push_back({apIdx, staIdx, distance});
 
 	// std::cout << "AP: " << apIdx << ", STA: " << staIdx << ", Successful FTM Count: " << in_session.GetIndividualRTT().size() << ", Distance: " << distance << std::endl;
+	std::map<uint8_t, Ptr<FtmSession::FtmDialog>> dialogs = in_session.GetFtmDialogs();
+
+	DialogsCntList.push_back(dialogs.size());
 }
 
 /* WifiEnvironment class implementation */
@@ -270,6 +273,7 @@ Multilateration::~Multilateration()
 	}
 	m_ftmParams.~FtmParams();
 	ApStaDistList.clear();
+	DialogsCntList.clear();
 }
 
 Ptr<WiredFtmErrorModel>

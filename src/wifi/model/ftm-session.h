@@ -275,6 +275,7 @@ private:
   FtmParams m_ftm_params;  //!< The FtmParams.
   FtmParams m_default_ftm_params;  //!< The default FtmParams.
   uint64_t m_preamble_detection_duration;  //!< The preamble detection duration.
+  bool m_got_successful_resp; //!< Flag indicating the session got at least one response.
 
   Ptr<FtmDialog> m_current_dialog;  //!< The current dialog.
   uint8_t m_current_dialog_token;  //!< The current dialog token.
@@ -321,6 +322,20 @@ private:
    * Sets the default FtmParams as the active FtmParams
    */
   void UseDefaultFtmParams (void);
+
+  /**
+   * Check if there's any successful FTM comes in.
+   * 
+   * @return true 
+   * @return false 
+   */
+  bool CheckAnySuccessfulResponse (void);
+
+  /**
+   * Start over the session if there's no successful FTM comes in.
+   * 
+   */
+  void StartOverSessionIfNoResponse(void);
 
   /**
    * Checks if the FTM parameters are valid.

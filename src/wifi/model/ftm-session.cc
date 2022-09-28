@@ -62,6 +62,7 @@ FtmSession::FtmSession ()
   m_ftm_error_model = CreateObject<FtmErrorModel> ();
   m_live_rtt_enabled = false;
   m_session_ended = false;
+  m_got_successful_resp = false;
   CreateDefaultFtmParams ();
 
   send_packet = MakeNullCallback <void, Ptr<Packet>, WifiMacHeader> ();
@@ -79,6 +80,7 @@ FtmSession::~FtmSession ()
   m_ftm_dialogs.clear();
   m_current_dialog = 0;
   m_session_ended = false;
+  m_got_successful_resp = false;
 
 
   send_packet = MakeNullCallback <void, Ptr<Packet>, WifiMacHeader> ();
@@ -170,6 +172,7 @@ FtmSession::ProcessFtmResponse (FtmResponseHeader ftm_res)
       FtmParams::StatusIndication status = m_ftm_params.GetStatusIndication();
       if (status == FtmParams::SUCCESSFUL)
         {
+          m_got_successful_resp = true;
           m_number_of_bursts_remaining = 1 << m_ftm_params.GetNumberOfBurstsExponent(); // 2 ^ Number of Bursts
           m_next_burst_period = MilliSeconds(m_ftm_params.GetBurstPeriod() * 100);
 
@@ -345,6 +348,20 @@ FtmSession::UseDefaultFtmParams (void)
   m_ftm_params = m_default_ftm_params;
 }
 
+bool
+FtmSession::CheckAnySuccessfulResponse()
+{
+  return m_got_successful_resp;
+}
+
+void
+FtmSession::StartOverSessionIfNoResponse()
+{
+  if (!CheckAnySuccessfulResponse()) {
+    this->SessionBegin();
+  }
+}
+
 void
 FtmSession::SessionBegin (void)
 {
@@ -365,6 +382,7 @@ FtmSession::SessionBegin (void)
       action.publicAction = WifiActionHeader::FTM_REQUEST;
       hdr.SetAction(WifiActionHeader::PUBLIC_ACTION, action);
       packet->AddHeader(hdr);
+      Simulator::Schedule(MilliSeconds(m_ftm_params.GetBurstPeriod() * 100 + 500), &FtmSession::StartOverSessionIfNoResponse, this);
     }
   else if (m_session_type == FTM_RESPONDER)
     {
