@@ -91,7 +91,7 @@ WifiEnvironment::SetupDevicePhy(int64_t in_seed)
 
 	m_yansWifiPhy.SetChannel(m_yansWifiChannel.Create());
 
-	m_yansWifiPhy.Set("ChannelSettings", StringValue ("{0, 80, BAND_5GHZ, 0}"));
+	m_yansWifiPhy.Set("ChannelSettings", StringValue (strChannelSettings));
 
 	m_wifi.SetRemoteStationManager("ns3::IdealWifiManager");
 	// m_wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
