@@ -1,0 +1,7 @@
+logging debugredirect:  off: Debug output will go to both the screen and the log file.
+logging enabled:  on: Logging is enabled.
+logging file:  The current logfile is "gdb.txt".
+logging overwrite:  off: Logging appends to the log file.
+logging redirect:  off: Output will go to both the screen and the log file.
+Starting program: /Users/larry/Desktop/Research/GT/ns3-hands-on/ns-allinone-3.36/ns-3.36/build/scratch/ns3.36-wifi-test-debug 
+Starting program: /Users/larry/Desktop/Research/GT/ns3-hands-on/ns-allinone-3.36/ns-3.36/build/scratch/ns3.36-wifi-test-default 

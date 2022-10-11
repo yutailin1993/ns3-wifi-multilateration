@@ -1,11 +1,13 @@
-/*
-
-!.gitignore
-!src/
-
 /src/wifi/ftm_map/*.map
 
 /scratch/random-variable-stream.cc
 /scratch/scratch-simulator.cc
 /scratch/subdir/
-!scratch/
+
+/.vscode/
+/.DS_Store
+/build/
+/cmake-cache/
+/.lock-ns3_darwin_build
+/experiments\ results/
+/examples/
