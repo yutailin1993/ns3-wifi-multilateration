@@ -382,7 +382,7 @@ FtmSession::SessionBegin (void)
       action.publicAction = WifiActionHeader::FTM_REQUEST;
       hdr.SetAction(WifiActionHeader::PUBLIC_ACTION, action);
       packet->AddHeader(hdr);
-      Simulator::Schedule(MilliSeconds(m_ftm_params.GetBurstPeriod() * 100 + 500), &FtmSession::StartOverSessionIfNoResponse, this);
+      // Simulator::Schedule(MilliSeconds(m_ftm_params.GetBurstPeriod() * 100 + 500), &FtmSession::StartOverSessionIfNoResponse, this);
     }
   else if (m_session_type == FTM_RESPONDER)
     {
@@ -402,7 +402,8 @@ FtmSession::SessionBegin (void)
           m_current_dialog = new_dialog;
           m_ftm_dialogs.insert({dialog_token, new_dialog});
 
-          m_current_burst_end = Simulator::Now() + MicroSeconds(m_ftm_params.DecodeBurstDuration());
+          Time now = Simulator::Now();
+          m_current_burst_end = now + MicroSeconds(m_ftm_params.DecodeBurstDuration());
 
           m_number_of_bursts_remaining--;
           m_ftms_per_burst_remaining--;

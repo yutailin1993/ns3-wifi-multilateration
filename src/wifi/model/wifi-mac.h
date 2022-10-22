@@ -28,6 +28,7 @@
 #include "qos-utils.h"
 #include "ssid.h"
 #include "ftm-manager.h"
+#include "centralized-scheduler.h"
 
 namespace ns3 {
 
@@ -437,6 +438,42 @@ public:
   void DisableFtm (void);
 
   /**
+   * Set Centralized Scheduler, take an created centralized scheduler and
+   * assign to this WiFiMac. Note that the scheduler should be the same
+   * across all WiFiMac.
+   * 
+   * \param scheduler the centralized scheduler that assign to this WiFiMac
+   */
+  void SetupCentralizedScheduler (int deviceNo, Ptr<CentralizedScheduler> scheduler);
+
+
+
+  /**
+   * @brief Enable or disable Centralized Scheduler, Used for the attribute system. Calls EnableCs() and DisableCs().
+   * Direct calls to EnableCs() and DisableCs() work as well.
+   * 
+   * @param enabled true if Centralized Scheduler should be enabled, false otherwise
+   */
+  void SetCsEnabled (bool enabled);
+
+  /**
+   * @brief Return whether Centralized Scheduler is enabled or not.
+   * 
+   * @return true if Centralized Scheduler is enabled, false otherwise. 
+   */
+  bool GetCsEnabled (void) const;
+
+  /**
+   * @brief Used to enable Centralized Scheduler support on this WifiMac 
+   */
+  void EnableCs (void);
+
+  /**
+   * @brief Used to disable Centralized Scheduler support on this WifiMac 
+   */
+  void DisableCs (void);
+
+  /**
    * @brief Used to create a new FTM Session as initiator with the specified partner as the responder
    * 
    * @param partner 
@@ -665,6 +702,10 @@ private:
    * \param timeout the BK block ack inactivity timeout.
    */
   void SetBkBlockAckInactivityTimeout (uint16_t timeout);
+  /**
+   * Set up Non-QoS txop.
+   */
+  void SetNonQosTxop (void);
 
   /**
    * This Boolean is set \c true iff this WifiMac is to model
@@ -713,7 +754,10 @@ private:
   EdcaQueues m_edca;
 
   Ptr<FtmManager> m_ftm_manager; //!< FTM Manager for this WifiMac
+  Ptr<CentralizedScheduler> m_centralized_scheduler; //!< Centralized Scheduler for this WifiMac (should be the same across all WifiMac.)
+  Ptr<SchedulerPhyRxProxy> m_scheduler_proxy; //!< Centralized Scheduler Phy Rx proxy
   bool m_ftm_enabled; //!< aIs set to \c true if this WifiMac has FTM enabled
+  bool m_cs_enabled; //!< Set to \c true if this WifiMac has Centralized Scheduler enabled
   /**
    * This is used when the attribute system is used to enable FTM and WifiPhy has not yet been set.
    * Will enables FTM as soon as the WifiPhy object has been set.

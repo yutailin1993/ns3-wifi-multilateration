@@ -18,6 +18,7 @@
 #include "ns3/gnuplot.h"
 #include "ns3/rng-seed-manager.h"
 #include "ns3/random-variable-stream.h"
+#include "ns3/centralized-scheduler.h"
 
 #include <vector>
 #include <tuple>
@@ -56,6 +57,12 @@ enum EModel {
 	WIRELESS_ERROR
 };
 
+enum DeviceType {
+	AP,
+	STA,
+	ALL
+};
+
 const PositionList APPositionCandidate = {
 	{0, 10, 0},
 	{-10, 0, 0},
@@ -90,8 +97,9 @@ class WifiEnvironment
 		void SetupDevicePhy(int64_t in_seed);
 		void SetRTSCTS(bool in_enableRTSCTS);
 		void SetupMobility();
-		void SetupFTMEnv();
+		void ConstructDeviceLists();
 		void SetupApplication();
+		void SetupCentralizedScheduler(double in_alpha, Time in_periodLength, TransmissionType in_transType);
 
 		WifiNetDevicesList GetWifiAPs();
 		WifiNetDevicesList GetWifiSTAs();
@@ -135,11 +143,12 @@ class WifiEnvironment
 		ApplicationContainer m_serverApp;
 		std::vector<ApplicationContainer> m_clientApps;
 
-		std::vector<Ptr<NetDevice>> m_APDevicesList, m_STADevicesList;
-		WifiNetDevicesList m_wifiAPs, m_wifiSTAs;
+		std::vector<Ptr<NetDevice>> m_APDevicesList, m_STADevicesList, m_AllDevicesList;
+		WifiNetDevicesList m_wifiAPs, m_wifiSTAs, m_wifiAll;
 		AddressList m_apAddrs, m_staAddrs;
+		Ptr<CentralizedScheduler> m_centralizedScheduler;
 
-		Ptr<NetDevice> GetDevice(bool in_getAPs, int in_deviceNo);
+		Ptr<NetDevice> GetDevice(DeviceType in_deviceType, int in_deviceNo);
 };
 
 class Multilateration

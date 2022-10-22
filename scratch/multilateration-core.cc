@@ -13,6 +13,7 @@
 #include "ns3/wifi-net-device.h"
 #include "ns3/ap-wifi-mac.h"
 #include "ns3/sta-wifi-mac.h"
+#include "ns3/wifi-mac.h"
 #include "ns3/ftm-header.h"
 #include "ns3/ftm-session.h"
 #include "ns3/mgt-headers.h"
@@ -22,6 +23,7 @@
 #include "ns3/rng-seed-manager.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/udp-client-server-helper.h"
+#include "ns3/centralized-scheduler.h"
 
 #include "multilateration-core.h"
 
@@ -86,8 +88,8 @@ WifiEnvironment::SetupDevicePhy(int64_t in_seed)
 	m_yansWifiPhy.SetPcapDataLinkType(WifiPhyHelper::DLT_IEEE802_11_RADIO);
 
 	m_yansWifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
-	m_yansWifiChannel.AddPropagationLoss("ns3::FixedRssLossModel", "Rss", DoubleValue(rss));
-	// m_yansWifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel", "Frequency", DoubleValue (5e9));
+	// m_yansWifiChannel.AddPropagationLoss("ns3::FixedRssLossModel", "Rss", DoubleValue(rss));
+	m_yansWifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel", "Frequency", DoubleValue (5e9));
 
 	m_yansWifiPhy.SetChannel(m_yansWifiChannel.Create());
 
@@ -145,7 +147,7 @@ WifiEnvironment::SetupMobility()
 	m_staPosAlloc = 
 		CreateObjectWithAttributes<RandomDiscPositionAllocator> ("X", StringValue("0"),
 																														 "Y", StringValue("0"),
-																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=30]"));
+																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=10]"));
 	m_mobility.SetPositionAllocator(m_staPosAlloc);
 	m_mobility.Install(m_wifiStaNodes);
 	
@@ -161,22 +163,37 @@ WifiEnvironment::SetupMobility()
 }
 
 void
-WifiEnvironment::SetupFTMEnv()
+WifiEnvironment::ConstructDeviceLists()
 {
 	// Set AP Devices, AP addresses, wifi AP devices
 	for (int i=0; i<m_nAPs; i++) {
-		m_APDevicesList.push_back(GetDevice(true, i));
+		m_APDevicesList.push_back(GetDevice(DeviceType::AP, i));
 		m_apAddrs.push_back(m_APDevicesList[i]->GetAddress());
 		m_wifiAPs.push_back(m_APDevicesList[i]->GetObject<WifiNetDevice> ());
 	}
 	// Add STA devices, wifi STA devices
 	for (int i=0; i<m_nSTAs; i++) {
-		m_STADevicesList.push_back(GetDevice(false, i));
+		m_STADevicesList.push_back(GetDevice(DeviceType::STA, i));
 		m_staAddrs.push_back(m_STADevicesList[i]->GetAddress());
 		m_wifiSTAs.push_back(m_STADevicesList[i]->GetObject<WifiNetDevice> ());
 	}
 
+	for (int i=0; i<m_nAPs+m_nSTAs; i++) {
+		m_AllDevicesList.push_back(GetDevice(DeviceType::ALL, i));
+		m_wifiAll.push_back(m_AllDevicesList[i]->GetObject<WifiNetDevice> ());
+	}
+
 	// m_yansWifiPhy.EnablePcap("multilateration", m_devices);
+}
+
+void
+WifiEnvironment::SetupCentralizedScheduler(double in_alpha, Time in_periodLength, TransmissionType in_transType)
+{
+	m_centralizedScheduler = CreateObject<CentralizedScheduler> (in_alpha, in_periodLength, in_transType);
+
+	for (int i=0; i<m_nSTAs+m_nAPs; i++) {
+		m_wifiAll[i]->GetMac()->SetupCentralizedScheduler(i, m_centralizedScheduler);
+	}
 }
 
 void
@@ -205,7 +222,7 @@ WifiEnvironment::SetupApplication()
 			client.SetAttribute("PacketSize", UintegerValue(m_payloadSize));
 
 			ApplicationContainer clientApp = client.Install(m_wifiApNodes.Get(i));
-			clientApp.Start(Seconds(1.0));
+			clientApp.Start(Seconds(0.1));
 			clientApp.Stop(Seconds(m_simulationTime));
 
 			m_clientApps.push_back(clientApp);
@@ -256,12 +273,21 @@ WifiEnvironment::GetRecvAddress()
 }
 
 Ptr<NetDevice>
-WifiEnvironment::GetDevice(bool in_getAPs, int in_deviceNo)
+WifiEnvironment::GetDevice(DeviceType in_deviceType, int in_deviceNo)
 {
-	if (in_getAPs) {
+	switch (in_deviceType)
+	{
+	case DeviceType::AP:
 		return m_apDevices.Get(in_deviceNo);
-	} else {
+
+	case DeviceType::STA:
 		return m_staDevices.Get(in_deviceNo);
+
+	case DeviceType::ALL:
+		return m_devices.Get(in_deviceNo);
+	
+	default:
+		NS_FATAL_ERROR("Unrecognized deviced type!");
 	}
 }
 

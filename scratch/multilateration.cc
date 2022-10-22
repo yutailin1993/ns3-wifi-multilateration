@@ -160,7 +160,8 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	RngSeedManager::SetSeed(in_seed);
 	RngSeedManager::SetRun(in_seed);
 
-	Config::SetDefault("ns3::WifiMac::FTM_Enabled", BooleanValue(true));
+	Config::SetDefault("ns3::WifiMac::FTM_Enabled", BooleanValue(false));
+	Config::SetDefault("ns3::WifiMac::CentralizedScheduler_Enabled", BooleanValue(true));
 
 	WifiEnvironment wifiEnv = WifiEnvironment(in_envConf.nAPs,
 																						in_envConf.nSTAs,
@@ -174,7 +175,8 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	wifiEnv.CreateNodes();
 	wifiEnv.SetupDevicePhy(in_seed);
 	wifiEnv.SetupMobility();
-	wifiEnv.SetupFTMEnv();
+	wifiEnv.ConstructDeviceLists();
+	wifiEnv.SetupCentralizedScheduler(0, MilliSeconds(1000/in_nBursts), TransmissionType::DATA);
 	
 	wifiEnv.SetupApplication();
 
@@ -182,13 +184,13 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	WifiNetDevicesList wifiSTAlist = wifiEnv.GetWifiSTAs();
 	AddressList apAddrList = wifiEnv.GetRecvAddress();
 
-	positioning.SetFTMParams(in_nBursts, in_simulationTime);
-	positioning.ConstructAllSessions(in_envConf, wifiAPlist, wifiSTAlist, apAddrList);
-	SessionList allSessions = positioning.GetAllSessions();
+	// positioning.SetFTMParams(in_nBursts, in_simulationTime);
+	// positioning.ConstructAllSessions(in_envConf, wifiAPlist, wifiSTAlist, apAddrList);
+	// SessionList allSessions = positioning.GetAllSessions();
 
-	for (Ptr<FtmSession> session : allSessions) {
-		Simulator::ScheduleNow(&RunSession, session);
-	}
+	// for (Ptr<FtmSession> session : allSessions) {
+	// 	Simulator::ScheduleNow(&RunSession, session);
+	// }
 	
 	Simulator::Schedule (Seconds (0.0), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
 	Simulator::Stop(Seconds (in_simulationTime+1));
@@ -197,10 +199,10 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	ApplicationContainer serverApp = wifiEnv.GetServerApps();
 	std::vector<ApplicationContainer> clientAppList = wifiEnv.GetClientApps();
 
-	positioning.EndAllSessions();
+	// positioning.EndAllSessions();
 
-	PositionList staGroundTruthPosList = wifiEnv.GetStaPositions();
-	PositionList apPosList = wifiEnv.GetApPositions();
+	// PositionList staGroundTruthPosList = wifiEnv.GetStaPositions();
+	// PositionList apPosList = wifiEnv.GetApPositions();
 
 	double appThroughput = 0.0;
 
@@ -215,15 +217,15 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	// std::cout << avgAppThroughput << "," << std::endl;
 
 	double totalErr = 0.0;
-	for (int i=0; i<in_envConf.nSTAs; i++) {
-		totalErr += CalculatePosDiff(staGroundTruthPosList[i], CalculatePosition(i, in_envConf, apPosList));
-	}
+	// for (int i=0; i<in_envConf.nSTAs; i++) {
+	// 	totalErr += CalculatePosDiff(staGroundTruthPosList[i], CalculatePosition(i, in_envConf, apPosList));
+	// }
 
 	double ftmDiaglossRate = 0.0;
-	int totalSessionsNum = DialogsCntList.size(); 
-	for (int i=0; i<totalSessionsNum; i++) {
-		ftmDiaglossRate += double(in_nBursts * 10 * in_simulationTime - DialogsCntList[i]) / double(in_nBursts * 10 * in_simulationTime);
-	}
+	// int totalSessionsNum = DialogsCntList.size(); 
+	// for (int i=0; i<totalSessionsNum; i++) {
+	// 	ftmDiaglossRate += double(in_nBursts * 10 * in_simulationTime - DialogsCntList[i]) / double(in_nBursts * 10 * in_simulationTime);
+	// }
 
 	return {
 		appThroughput,
@@ -246,8 +248,8 @@ main(int argc, char *argv[])
 
 	// size_t staPerAP = 10;
 	int bps = 2;
-	for (size_t staPerAP=2; staPerAP<15; staPerAP+=2) {
-		std::cout << "# STA: " << staPerAP*3 << ", Burst Per Second: " << bps << std::endl;
+	for (size_t staPerAP=16; staPerAP<17; staPerAP+=2) {
+		std::cout << "# STA: " << staPerAP*3 << ", With CS " << std::endl;
 		std::vector<std::tuple<double, double, double, double, double>> resultsList;
 		
 		EnvConfig envConf = {
@@ -261,17 +263,17 @@ main(int argc, char *argv[])
 			"0.0012" // udpInterval
 		};
 
-		for (int simNum=1; simNum<11; simNum++) {
+		for (int simNum=11; simNum<21; simNum++) {
 			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRED_ERROR, envConf, udpConf, simulationTime));
 		}
 
 		std::cout << "PacketLossRate" << std::endl;
 		for (auto &tupItr : resultsList) {
-			std::cout << std::get<0>(tupItr) << "," << std::endl;
+			std::cout << std::get<3>(tupItr) << "," << std::endl;
 		}
 		std::cout << "FtmDialogLossRate" << std::endl;
 		for (auto &tupItr : resultsList) {
-			std::cout << std::get<1>(tupItr) << "," << std::endl;
+			std::cout << std::get<4>(tupItr) << "," << std::endl;
 		}
 		
 		std::cout << "TotalThroughput" << std::endl;

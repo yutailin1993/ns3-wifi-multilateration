@@ -19,50 +19,87 @@
  */
 
 #include "ns3/core-module.h"
+#include "ns3/mac48-address.h"
+#include "ns3/wifi-mac-header.h"
 
 #include "transmission-selector.h"
+#include "centralized-scheduler.h"
 
 namespace ns3 {
 
 NS_LOG_COMPONENT_DEFINE ("TransmissionScheduler");
 
-NS_OBJECT_ENSURE_REGISTERED (FtmTransmissionSelector);
-NS_OBJECT_ENSURE_REGISTERED (DataTransmissionSelector);
+NS_OBJECT_ENSURE_REGISTERED (TransmissionSelector);
 
-bool
-FtmTransmissionSelector::CheckPreambleDetectable()
+TransmissionSelector::TransmissionSelector()
 {
+	m_lock = 0;
+	m_candidateAddrs.clear();
+}
 
+TransmissionSelector::~TransmissionSelector()
+{
+	m_candidateAddrs.clear();
+}
+
+std::vector<Mac48Address>
+TransmissionSelector::GetCandidateAddrs()
+{
+	return m_candidateAddrs;
 }
 
 void
-FtmTransmissionSelector::AddCandidatePairToList()
+TransmissionSelector::ResetCandidateAddrs()
 {
-
-}
-
-std::tuple<int,int>
-FtmTransmissionSelector::SelecFinalCandidate()
-{
-
+	m_candidateAddrs.clear();
 }
 
 bool
-DataTransmissionSelector::CheckPreambleDetectable()
+TransmissionSelector::GetLock()
 {
-
+	if (m_lock == 0) {
+		m_lock++;
+		return true;
+	} else {
+		return false;
+	}
 }
 
 void
-DataTransmissionSelector::AddCandidatePairToList()
+TransmissionSelector::RegisterDevice(int in_deviceNo, Mac48Address in_deviceAddr)
 {
-
+	m_nodeAddrTable.insert(std::pair<const int, Mac48Address> (in_deviceNo, in_deviceAddr));
 }
 
-std::tuple<int,int>
-DataTransmissionSelector::SelecFinalCandidate()
+void
+TransmissionSelector::ReleaseLock()
 {
+	m_lock = 0;
+}
 
+void
+TransmissionSelector::SetCandidate(WifiMacHeader in_hdr)
+{
+	Mac48Address toAddr, fromAddr;
+	toAddr = in_hdr.GetAddr1();
+	fromAddr = in_hdr.GetAddr2();
+
+	m_candidateAddrs.push_back(toAddr);
+	m_candidateAddrs.push_back(fromAddr);
+}
+
+int
+TransmissionSelector::GetIndexByAddr(Mac48Address in_addr)
+{
+	for (auto iter=m_nodeAddrTable.begin(); iter!=m_nodeAddrTable.end(); iter++) {
+		if (iter->second == in_addr) {
+			return iter->first;
+		}
+	}
+
+	NS_FATAL_ERROR("Address is not in the table, unacceptable!!");
+
+	return -1;
 }
 
 } /* namespace ns3 */

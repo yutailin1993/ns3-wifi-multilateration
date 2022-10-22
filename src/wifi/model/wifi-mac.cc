@@ -59,6 +59,7 @@ WifiMac::WifiMac ()
   m_ftm_enabled = false;
   m_ftm_enable_later = false;
   m_ftm_manager = 0;
+  m_cs_enabled = false;
 }
 
 WifiMac::~WifiMac ()
@@ -321,6 +322,12 @@ WifiMac::GetTypeId (void)
                    MakeBooleanAccessor (&WifiMac::SetFtmEnabled,
                                         &WifiMac::GetFtmEnabled),
                    MakeBooleanChecker ())
+    .AddAttribute ("CentralizedScheduler_Enabled",
+                   "Enable centrailzed scheduler for Wifi network.",
+                   BooleanValue (false),
+                   MakeBooleanAccessor (&WifiMac::SetCsEnabled,
+                                        &WifiMac::GetCsEnabled),
+                   MakeBooleanChecker ())
   ;
   return tid;
 }
@@ -376,6 +383,7 @@ WifiMac::DoDispose ()
 
   m_device = 0;
   m_ftm_manager = 0;
+  m_centralized_scheduler = 0;
 }
 
 void
@@ -679,14 +687,12 @@ WifiMac::ConfigurePhyDependentParameters (void)
   NS_ASSERT (m_phy != 0);
   WifiStandard standard = m_phy->GetStandard ();
 
-  if (standard == WIFI_STANDARD_80211b)
-    {
+  if (!m_cs_enabled) {
+    if (standard == WIFI_STANDARD_80211b) {
       SetDsssSupported (true);
       cwmin = 31;
       cwmax = 1023;
-    }
-  else
-    {
+    } else {
       if (standard >= WIFI_STANDARD_80211g && band == WIFI_PHY_BAND_2_4GHZ)
         {
           SetErpSupported (true);
@@ -695,6 +701,7 @@ WifiMac::ConfigurePhyDependentParameters (void)
       cwmin = 15;
       cwmax = 1023;
     }
+  }
 
   ConfigureContentionWindow (cwmin, cwmax);
 }
@@ -815,12 +822,9 @@ WifiMac::SetQosSupported (bool enable)
   if (!m_qosSupported)
     {
       // create a non-QoS TXOP
-      m_txop = CreateObject<Txop> ();
-      m_txop->SetChannelAccessManager (m_channelAccessManager);
-      m_txop->SetWifiMac (this);
-      m_txop->SetTxMiddle (m_txMiddle);
-      m_txop->SetDroppedMpduCallback (MakeCallback (&DroppedMpduTracedCallback::operator(),
-                                                    &m_droppedMpduCallback));
+      if (m_txop == nullptr) {
+        SetNonQosTxop();
+      }
     }
   else
     {
@@ -1130,6 +1134,17 @@ WifiMac::GetHeSupported () const
       return true;
     }
   return false;
+}
+
+void
+WifiMac::SetNonQosTxop ()
+{
+  m_txop = CreateObject<Txop> ();
+  m_txop->SetChannelAccessManager (m_channelAccessManager);
+  m_txop->SetWifiMac (this);
+  m_txop->SetTxMiddle (m_txMiddle);
+  m_txop->SetDroppedMpduCallback (MakeCallback (&DroppedMpduTracedCallback::operator(),
+                                                    &m_droppedMpduCallback));
 }
 
 void
@@ -1470,12 +1485,10 @@ void
 WifiMac::SetFtmEnabled (bool enabled)
 {
   if (enabled) {
-    m_txop = CreateObject<Txop> ();
-    m_txop->SetChannelAccessManager (m_channelAccessManager);
-    m_txop->SetWifiMac (this);
-    m_txop->SetTxMiddle (m_txMiddle);
-    m_txop->SetDroppedMpduCallback (MakeCallback (&DroppedMpduTracedCallback::operator(),
-                                                      &m_droppedMpduCallback));
+    if (m_txop == nullptr) {
+      SetNonQosTxop();
+    }
+
     if (GetWifiPhy() == 0) {
       m_ftm_enable_later = true;
       return;
@@ -1515,6 +1528,41 @@ void WifiMac::DisableFtm (void)
   m_ftm_enabled = false;
 }
 
+void
+WifiMac::SetCsEnabled(bool enabled)
+{
+  if (enabled) {
+    if (m_txop == nullptr) {
+      SetNonQosTxop();
+    }
+    m_txop->SetMinCw(0);
+    m_txop->SetMaxCw(0);
+    EnableCs();
+  } else if (!enabled) {
+    DisableCs();
+  }
+}
+
+bool
+WifiMac::GetCsEnabled (void) const
+{
+  return m_cs_enabled;
+}
+
+void
+WifiMac::EnableCs (void)
+{
+  NS_LOG_FUNCTION (this);
+  m_cs_enabled = true;
+}
+
+void
+WifiMac::DisableCs (void)
+{
+  NS_LOG_FUNCTION (this);
+  m_cs_enabled = false;
+}
+
 Ptr<FtmSession>
 WifiMac::NewFtmSession (Mac48Address partner)
 {
@@ -1523,6 +1571,24 @@ WifiMac::NewFtmSession (Mac48Address partner)
     return m_ftm_manager->CreateNewSession(partner, FtmSession::FTM_INITIATOR);
   }
   return 0;
+}
+
+void
+WifiMac::SetupCentralizedScheduler(int deviceNo, Ptr<CentralizedScheduler> scheduler)
+{
+  if (!m_cs_enabled) {
+    NS_FATAL_ERROR ("Centralized Scheduler is not enabled!!");
+  } else { // centralized scheduler enabled
+    m_centralized_scheduler = scheduler;
+    m_centralized_scheduler->RegisterDevice(deviceNo, m_address);
+
+    m_scheduler_proxy = CreateObject<SchedulerPhyRxProxy> (m_centralized_scheduler, m_address);
+    m_scheduler_proxy->SetPhyRxCallBack(m_cs_enabled, GetWifiPhy());
+
+    m_channelAccessManager->SetupCentralizedScheduler(m_centralized_scheduler);
+    m_feManager->SetCentralizedScheduler(m_centralized_scheduler);
+
+  }
 }
 
 } //namespace ns3

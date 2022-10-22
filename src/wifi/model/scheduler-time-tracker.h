@@ -29,19 +29,31 @@ namespace ns3 {
 class SchedulerTimeTracker : public Object
 {
 public:
-	SchedulerTimeTracker() {}
-	virtual ~SchedulerTimeTracker() {}
-	bool ReachFtmProportionTime();
-	bool ReachTimeAllocationPeriod();
-	Time MarkTransmissionStart();
-	Time MarkTransmissionEnd();
+	SchedulerTimeTracker(double in_alpha, Time in_allocationPeriodLength);
+	virtual ~SchedulerTimeTracker();
+	void UpdateAlpha(double in_alpha);
+	void MarkTransmissionStartTime();
+	void MarkTransmissionEndTime();
+	Time GetTransmissionStartTime();
+	Time GetTransmissionEndTime();
+	Time GetFtmEndTime();
+	Time GetPeriodEndTime();
+	Time GetDataTimeLength();
+	Time GetFtmTimeLength();
+	void UpdateTimes();
+	double GetAlpha();
+
 private:
-	Time m_timeAllocationPeriod;
+
+	double m_alpha;
+	Time m_allocationPeriodLength;
 	Time m_transmissionStartTime;
 	Time m_transmissionEndTime;
-	Time m_ftmProportionTime;
-	Time periodStartTime;
-	double alpha;
+	Time m_ftmEndTime;
+	Time m_periodEndTime;
+	Time m_periodStartTime;
+	Time m_ftmTimeLength;
+	Time m_dataTimeLength;
 
 };
 	

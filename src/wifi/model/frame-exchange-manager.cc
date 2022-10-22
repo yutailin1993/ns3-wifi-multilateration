@@ -54,7 +54,8 @@ FrameExchangeManager::GetTypeId (void)
 FrameExchangeManager::FrameExchangeManager ()
   : m_navEnd (Seconds (0)),
     m_promisc (false),
-    m_moreFragments (false)
+    m_moreFragments (false),
+    m_cs_enabled (false)
 {
   NS_LOG_FUNCTION (this);
 }
@@ -62,6 +63,7 @@ FrameExchangeManager::FrameExchangeManager ()
 FrameExchangeManager::~FrameExchangeManager ()
 {
   NS_LOG_FUNCTION_NOARGS ();
+  m_centralizedScheduler = 0;
 }
 
 void
@@ -80,6 +82,15 @@ FrameExchangeManager::Reset (void)
 }
 
 void
+FrameExchangeManager::CentralizedSchedulerTimeOut(void)
+{
+  if (!m_cs_enabled) {
+    NS_FATAL_ERROR("Centralized Scheduler is not enabled in feManager!");
+  }
+  m_centralizedScheduler->TransmissionEnd();
+}
+
+void
 FrameExchangeManager::DoDispose (void)
 {
   NS_LOG_FUNCTION (this);
@@ -91,6 +102,7 @@ FrameExchangeManager::DoDispose (void)
   m_channelAccessManager = 0;
   m_protectionManager = 0;
   m_ackManager = 0;
+  m_cs_enabled = false;
   if (m_phy != 0)
     {
       m_phy->TraceDisconnectWithoutContext ("PhyRxPayloadBegin",
@@ -419,6 +431,11 @@ FrameExchangeManager::SendMpdu (void)
       NS_ASSERT (!m_txTimer.IsRunning ());
       m_txTimer.Set (WifiTxTimer::WAIT_NORMAL_ACK, timeout, &FrameExchangeManager::NormalAckTimeout,
                      this, m_mpdu, m_txParams.m_txVector);
+
+      // if (m_cs_enabled) {
+      //   Simulator::Schedule (timeout, &FrameExchangeManager::CentralizedSchedulerTimeOut, this);
+      // }
+
       m_channelAccessManager->NotifyAckTimeoutStartNow (timeout);
     }
   else
@@ -847,6 +864,13 @@ FrameExchangeManager::DoCtsTimeout (Ptr<WifiPsdu> psdu)
       ReleaseSequenceNumber (mpdu);
     }
   TransmissionFailed ();
+}
+
+void
+FrameExchangeManager::SetCentralizedScheduler(Ptr<CentralizedScheduler> scheduler)
+{
+  m_centralizedScheduler = scheduler;
+  m_cs_enabled = true;
 }
 
 void

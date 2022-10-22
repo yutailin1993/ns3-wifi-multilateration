@@ -142,9 +142,9 @@ set(source_files
     model/ftm-header.cc
     model/ftm-session.cc
     model/ftm-error-model.cc
-    model/centralized-scheduler.cc
-    model/scheduler-time-tracker.cc
     model/transmission-selector.cc
+    model/scheduler-time-tracker.cc
+    model/centralized-scheduler.cc
 )
 
 set(header_files
@@ -289,9 +289,9 @@ set(header_files
     model/ftm-header.h
     model/ftm-session.h
     model/ftm-error-model.h
-    model/centralized-scheduler.h
-    model/scheduler-time-tracker.h
     model/transmission-selector.h
+    model/scheduler-time-tracker.h
+    model/centralized-scheduler.h
 )
 
 build_lib(

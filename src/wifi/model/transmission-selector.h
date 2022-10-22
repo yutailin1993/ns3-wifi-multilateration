@@ -22,67 +22,37 @@
 #define TRANSMISSIONSELECTOR_H
 
 #include "ns3/object.h"
+#include "ns3/mac48-address.h"
+#include "ns3/wifi-mac-header.h"
+#include "ns3/wifi-phy.h"
+#include "ns3/packet.h"
 
 #include <tuple>
+#include <map>
 
 namespace ns3 {
 
 class TransmissionSelector : public Object
 {
 public:
-	TransmissionSelector() {}
-	virtual ~TransmissionSelector() {}
-	virtual bool CheckPreambleDetectable() = 0;
-	virtual void AddCandidatePairToList() = 0;
-	virtual std::tuple<int,int> SelecFinalCandidate() = 0;
-};
+	TransmissionSelector();
+	virtual ~TransmissionSelector();
+	void SetCandidate(WifiMacHeader in_hdr);
+	std::vector<Mac48Address> GetCandidateAddrs();
+	void ResetCandidateAddrs();
+	void RegisterDevice(int in_deviceNo, Mac48Address in_deviceAddr);
+	void ReleaseLock();
+	bool GetLock();
 
-}
-
-#endif /* TRANSMISSIONSELECTOR_H_ */
-
-#ifndef FTMTRANSMISSIONSELECTOR_H
-#define FTMTRANSMISSIONSELECTOR_H
-
-namespace ns3 {
-
-class FtmTransmissionSelector : public TransmissionSelector
-{
-public:
-	FtmTransmissionSelector() {}
-	virtual ~FtmTransmissionSelector() {}
-	bool CheckPreambleDetectable();
-	void AddCandidatePairToList();
-	std::tuple<int,int> SelecFinalCandidate();
 private:
-	std::tuple<int,int> finalCandidate;
-	std::vector<std::tuple<int,int>> candidatePairList;
+	int GetIndexByAddr(Mac48Address in_addr);
+	int m_lock;
 
-};
-
-}
-
-#endif /* FTMTRANSMISSIONSELECTOR_H_ */
-
-#ifndef DATATRANSMISSIONSELECTOR_H
-#define DTATTRANSMISSIONSELECTOR_H
-
-namespace ns3 {
-
-class DataTransmissionSelector : public TransmissionSelector
-{
-public:
-	DataTransmissionSelector() {}
-	virtual ~DataTransmissionSelector() {}
-	bool CheckPreambleDetectable();
-	void AddCandidatePairToList();
-	std::tuple<int,int> SelecFinalCandidate();
-private:
-	std::tuple<int,int> finalCandidate;
-	std::vector<std::tuple<int,int>> candidatePairList;
+	std::map<const int, Mac48Address> m_nodeAddrTable;
+	std::vector<Mac48Address> m_candidateAddrs;
 
 };
 
 } /* namespace ns3 */
 
-#endif /* DTATTRANSMISSIONSELECTOR_H_ */
+#endif /* TRANSMISSIONSELECTOR_H_ */

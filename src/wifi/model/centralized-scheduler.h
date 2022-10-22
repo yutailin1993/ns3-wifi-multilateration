@@ -22,28 +22,53 @@
 #define CENTRALIZEDSCHEDULER_H
 
 #include "ns3/object.h"
+#include "ns3/mac48-address.h"
+#include "ns3/wifi-phy.h"
+
+#include "txop.h"
+#include "transmission-selector.h"
+#include "scheduler-time-tracker.h"
 
 #include <vector>
 #include <tuple>
 
 namespace ns3 {
 
+enum TransmissionType
+{
+	FTM,
+	DATA,
+	ACK // Note that m_currTransType should never be ACK in any circumstance
+};
+
 class CentralizedScheduler : public Object
 {
 public:
-	CentralizedScheduler() {}
-	virtual ~CentralizedScheduler() {}
-	void StartTransmission();
-	void SwitchTransmissionType();
-	void TransmissionEnd(); // callback 
-	void SelectFTMCandidate();
-	void SelectDataCandidate();
+	CentralizedScheduler(double in_timeTrackerAlpha,
+											 Time in_timeTrackerPeriodLength,
+											 TransmissionType in_startTransType);
+	virtual ~CentralizedScheduler();
+	void TransmissionStart();
+	bool TransmissionEnd(); 
+	bool GetTransmissionGranted(Ptr<Txop> in_txop);
+	bool ContendForTransmissionGrant(Ptr<Txop> in_txop);
+	void RegisterDevice(int in_deviceNo, Mac48Address in_deviceAddr);
+
+protected:
+	void DoDispose (void) override;
 
 private:
-	int8_t m_currentTransmissionType;
-	std::tuple<int, int> m_transmissionPair;
-	std::vector<uint32_t> m_dataTransmittedByteList;
-	std::vector<int> m_ftmMeasuredCountList;
+	TransmissionType GetTransmissionType(Ptr<Packet> in_packet, WifiMacHeader in_hdr);
+	void SwitchTransType();
+
+	Mac48Address m_broadcastAddr;
+	Mac48Address m_ftmRequestAddr; // The address that request FTM
+	Mac48Address m_ftmResponseAddr; // The address that response FTM
+	Ptr<SchedulerTimeTracker> m_timeTracker;
+	Ptr<TransmissionSelector> m_transSelector;
+	TransmissionType m_currTransType;
+	std::vector<Mac48Address> m_transPairAddr;
+	std::vector<Mac48Address> m_preTransPairAddr;
 	
 };
 
@@ -51,3 +76,25 @@ private:
 
 
 #endif /* CENTRALIZEDSCHEDULER_H_ */
+
+#ifndef SCHEDULERPHYRXPROXY_H
+#define SCHEDULERPHYRXPROXY_H
+
+namespace ns3 {
+class SchedulerPhyRxProxy : public Object
+{
+public:
+	SchedulerPhyRxProxy(Ptr<CentralizedScheduler> in_scheduler, Mac48Address in_mac_addr);
+	virtual ~SchedulerPhyRxProxy();
+	void SetPhyRxCallBack(bool in_cs_enabled, Ptr<WifiPhy> in_phy);
+
+private:
+	void PhyRxBegin(Ptr<const Packet> packet, RxPowerWattPerChannelBand rxPowersW);
+	Ptr<CentralizedScheduler> m_centralized_scheduler;
+	Mac48Address m_mac_addr;
+
+};
+
+} /* namespace ns3 */
+
+#endif /* SCHEDULERPHYRXPROXY_H */

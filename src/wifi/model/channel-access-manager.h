@@ -32,6 +32,7 @@ class WifiPhy;
 class PhyListener;
 class Txop;
 class FrameExchangeManager;
+class CentralizedScheduler;
 
 /**
  * \brief Manage a set of ns3::Txop
@@ -72,6 +73,12 @@ public:
    * \param feManager the Frame Exchange Manager
    */
   void SetupFrameExchangeManager (Ptr<FrameExchangeManager> feManager);
+  /**
+   * Set up the Centralized Scheduler.
+   *
+   * \param centralizedScheduler the Centralized Scheduler
+   */
+  void SetupCentralizedScheduler (Ptr<CentralizedScheduler> centralizedScheduler);
 
   /**
    * \param txop a new Txop.
@@ -311,6 +318,7 @@ private:
   Time m_lastSwitchingDuration;          //!< the last switching duration time
   bool m_sleeping;                       //!< flag whether it is in sleeping state
   bool m_off;                            //!< flag whether it is in off state
+  bool m_cs_enabled;
   Time m_eifsNoDifs;                     //!< EIFS no DIFS time
   EventId m_accessTimeout;               //!< the access timeout ID
   Time m_slot;                           //!< the slot time
@@ -318,6 +326,7 @@ private:
   PhyListener* m_phyListener;            //!< the PHY listener
   Ptr<WifiPhy> m_phy;                    //!< pointer to the PHY
   Ptr<FrameExchangeManager> m_feManager; //!< pointer to the Frame Exchange Manager
+  Ptr<CentralizedScheduler> m_centralizedScheduler; //!< pointer to the Centralized Scheduler
 };
 
 } //namespace ns3

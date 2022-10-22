@@ -20,6 +20,8 @@
 
 #include "ns3/log.h"
 #include "ns3/simulator.h"
+#include "ns3/wifi-mac-queue.h"
+#include "ns3/wifi-mac-queue-item.h"
 #include "channel-access-manager.h"
 #include "txop.h"
 #include "wifi-phy-listener.h"
@@ -114,6 +116,7 @@ ChannelAccessManager::ChannelAccessManager ()
     m_lastSwitchingDuration (MicroSeconds (0)),
     m_sleeping (false),
     m_off (false),
+    m_cs_enabled (false),
     m_phyListener (0)
 {
   NS_LOG_FUNCTION (this);
@@ -137,6 +140,7 @@ ChannelAccessManager::DoDispose (void)
     }
   m_phy = 0;
   m_feManager = 0;
+  m_centralizedScheduler = 0;
 }
 
 void
@@ -168,6 +172,14 @@ ChannelAccessManager::SetupFrameExchangeManager (Ptr<FrameExchangeManager> feMan
   NS_LOG_FUNCTION (this << feManager);
   m_feManager = feManager;
   m_feManager->SetChannelAccessManager (this);
+}
+
+void
+ChannelAccessManager::SetupCentralizedScheduler (Ptr<CentralizedScheduler> scheduler)
+{
+  NS_LOG_FUNCTION (this << scheduler);
+  m_centralizedScheduler = scheduler;
+  m_cs_enabled = true;
 }
 
 Time
@@ -293,6 +305,29 @@ void
 ChannelAccessManager::RequestAccess (Ptr<Txop> txop)
 {
   NS_LOG_FUNCTION (this << txop);
+
+  if (m_cs_enabled) {
+    m_centralizedScheduler->ContendForTransmissionGrant(txop);
+    if (!m_centralizedScheduler->GetTransmissionGranted(txop)) {
+      Simulator::Schedule(MicroSeconds(10), &Txop::StartAccessIfNeeded, txop);
+      return;
+    }
+  }
+  
+  // if(txop->HasFramesToTransmit()) {
+  //   Ptr<WifiMacQueue> queue = txop->GetWifiMacQueue();
+  //   WifiMacHeader hdr = queue->Peek()->GetItem()->GetHeader();
+
+  //   uint8_t from[6], to[6];
+  //   hdr.GetAddr1().CopyTo(to);
+  //   hdr.GetAddr2().CopyTo(from);
+
+  //   if (hdr.GetType() == WifiMacType::WIFI_MAC_QOSDATA) {
+  //     std::cout << "Data requested!! From: " << int(from[5]) << ", to: " << int(to[5]) << ", macType: " << hdr.GetType() << ", time: " << Simulator::Now();
+  //     std::cout << std::endl;
+  //   }
+  // }
+
   if (m_phy)
     {
       m_phy->NotifyChannelAccessRequested ();
@@ -404,6 +439,7 @@ Time
 ChannelAccessManager::GetAccessGrantStart (bool ignoreNav) const
 {
   NS_LOG_FUNCTION (this);
+  Time now = Simulator::Now();
   Time lastRxEnd = m_lastRxStart + m_lastRxDuration;
   const Time& sifs = GetSifs();
   Time rxAccessStart = lastRxEnd + sifs;
@@ -451,6 +487,11 @@ Time
 ChannelAccessManager::GetBackoffStartFor (Ptr<Txop> txop)
 {
   NS_LOG_FUNCTION (this << txop);
+  Time backOffStart = txop->GetBackoffStart();
+  Time grantStart = GetAccessGrantStart ();
+  Time aifsn = txop->GetAifsn () * GetSlot ();
+  Time now = Simulator::Now();
+  // std::cout << "Now: " << now << ", backOffStart: " << backOffStart << ", grantStart: " << grantStart << ", aifsn: " << aifsn << std::endl;
   Time mostRecentEvent = MostRecent ({txop->GetBackoffStart (),
                                      GetAccessGrantStart () + (txop->GetAifsn () * GetSlot ())});
   NS_LOG_DEBUG ("Backoff start: " << mostRecentEvent.As (Time::US));
@@ -515,6 +556,22 @@ ChannelAccessManager::DoRestartAccessTimeoutIfNeeded (void)
   Time expectedBackoffEnd = Simulator::GetMaximumSimulationTime ();
   for (auto txop : m_txops)
     {
+      /* debug */
+      // Ptr<WifiMacQueue> queue = txop->GetWifiMacQueue();
+      // if (!queue->IsEmpty()) {
+      //   WifiMacHeader hdr = queue->Peek()->GetHeader();
+
+      //   if (hdr.GetType() == WifiMacType::WIFI_MAC_QOSDATA) {
+      //     uint8_t from[6], to[6];
+      //     hdr.GetAddr1().CopyTo(to);
+      //     hdr.GetAddr2().CopyTo(from);
+  
+      //     std::cout << "Data packet" << " from: " << int(from[5]) << ", to: " << int(to[5]) << ", time: " << Simulator::Now();
+      //     std::cout << std::endl;
+      //   }
+      // }
+      
+      /* end debug */
       if (txop->GetAccessStatus () == Txop::REQUESTED)
         {
           Time tmp = GetBackoffEndFor (txop);
