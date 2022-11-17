@@ -82,15 +82,6 @@ FrameExchangeManager::Reset (void)
 }
 
 void
-FrameExchangeManager::CentralizedSchedulerTimeOut(void)
-{
-  if (!m_cs_enabled) {
-    NS_FATAL_ERROR("Centralized Scheduler is not enabled in feManager!");
-  }
-  m_centralizedScheduler->TransmissionEnd();
-}
-
-void
 FrameExchangeManager::DoDispose (void)
 {
   NS_LOG_FUNCTION (this);
@@ -306,7 +297,9 @@ FrameExchangeManager::StartTransmission (Ptr<Txop> dcf)
 
   NS_LOG_DEBUG ("MPDU payload size=" << mpdu->GetPacketSize () <<
                 ", to=" << mpdu->GetHeader ().GetAddr1 () <<
-                ", seq=" << mpdu->GetHeader ().GetSequenceControl ());
+                ", from=" << mpdu->GetHeader ().GetAddr2 () <<
+                ", seq=" << mpdu->GetHeader ().GetSequenceControl () << 
+                ", Time=" << Simulator::Now());
 
   // check if the MSDU needs to be fragmented
   mpdu = GetFirstFragmentIfNeeded (mpdu);
@@ -351,6 +344,14 @@ FrameExchangeManager::GetFirstFragmentIfNeeded (Ptr<WifiMacQueueItem> mpdu)
 }
 
 void
+FrameExchangeManager::CSTransmissionEndIfNeeded ()
+{
+  if (m_cs_enabled) {
+    m_centralizedScheduler->TransmissionEnd();
+  }
+}
+
+void
 FrameExchangeManager::SendMpduWithProtection (Ptr<WifiMacQueueItem> mpdu, WifiTxParameters& txParams)
 {
   NS_LOG_FUNCTION (this << *mpdu << &txParams);
@@ -389,6 +390,13 @@ FrameExchangeManager::SendMpduWithProtection (Ptr<WifiMacQueueItem> mpdu, WifiTx
       break;
     default:
       NS_ABORT_MSG ("Unknown protection type");
+    }
+
+    if (m_cs_enabled) {
+      if (mpdu->GetHeader().GetAddr1().IsBroadcast()) {
+        Simulator::Schedule(m_channelAccessManager->GetLastTxDuration(),
+                            &CentralizedScheduler::TransmissionEnd, m_centralizedScheduler);
+      }
     }
 }
 
@@ -431,10 +439,6 @@ FrameExchangeManager::SendMpdu (void)
       NS_ASSERT (!m_txTimer.IsRunning ());
       m_txTimer.Set (WifiTxTimer::WAIT_NORMAL_ACK, timeout, &FrameExchangeManager::NormalAckTimeout,
                      this, m_mpdu, m_txParams.m_txVector);
-
-      // if (m_cs_enabled) {
-      //   Simulator::Schedule (timeout, &FrameExchangeManager::CentralizedSchedulerTimeOut, this);
-      // }
 
       m_channelAccessManager->NotifyAckTimeoutStartNow (timeout);
     }
@@ -786,6 +790,7 @@ FrameExchangeManager::TransmissionFailed (void)
   // A non-QoS station always releases the channel upon a transmission failure
   m_dcf->NotifyChannelReleased ();
   m_dcf = 0;
+  CSTransmissionEndIfNeeded();
 }
 
 void
@@ -803,6 +808,7 @@ FrameExchangeManager::NormalAckTimeout (Ptr<WifiMacQueueItem> mpdu, const WifiTx
       DequeueMpdu (mpdu);
       m_mac->GetWifiRemoteStationManager ()->ReportFinalDataFailed (mpdu);
       m_dcf->ResetCw ();
+      CSTransmissionEndIfNeeded();
     }
   else
     {
@@ -1002,6 +1008,12 @@ FrameExchangeManager::Receive (Ptr<WifiPsdu> psdu, RxSignalInfo rxSignalInfo,
     {
       EndReceiveAmpdu (psdu, rxSignalInfo, txVector, perMpduStatus);
     }
+
+    Ptr<WifiMacQueueItem> mpdu = *(psdu->begin());
+    WifiMacHeader hdr = mpdu->GetHeader();
+    if (hdr.IsAck() || hdr.IsBlockAck() || hdr.GetType() == WifiMacType::WIFI_MAC_CTL_BACKRESP) {
+      CSTransmissionEndIfNeeded();
+    }
 }
 
 void
@@ -1155,7 +1167,7 @@ FrameExchangeManager::ReceiveMpdu (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSi
 
       if (hdr.GetAddr1 () == m_self)
         {
-          NS_LOG_DEBUG ("Received " << hdr.GetTypeString () << " from=" << hdr.GetAddr2 () << ", schedule ACK");
+          NS_LOG_DEBUG ("Received " << hdr.GetTypeString () << " from=" << hdr.GetAddr2 () << " I'm=" << hdr.GetAddr1() << ", time=" << Simulator::Now() << ", schedule ACK");
           Simulator::Schedule (m_phy->GetSifs (), &FrameExchangeManager::SendNormalAck,
                                this, hdr, txVector, rxSnr);
         }
@@ -1166,7 +1178,7 @@ FrameExchangeManager::ReceiveMpdu (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSi
     {
       if (hdr.GetAddr1 () == m_self)
         {
-          NS_LOG_DEBUG ("Received " << hdr.GetTypeString () << " from=" << hdr.GetAddr2 () << ", schedule ACK");
+          NS_LOG_DEBUG ("Received " << hdr.GetTypeString () << " from=" << hdr.GetAddr2 () << " I'm=" << hdr.GetAddr1() << ", time=" << Simulator::Now() << ", schedule ACK");
           Simulator::Schedule (m_phy->GetSifs (), &FrameExchangeManager::SendNormalAck,
                                this, hdr, txVector, rxSnr);
         }
@@ -1180,8 +1192,8 @@ FrameExchangeManager::ReceivedNormalAck (Ptr<WifiMacQueueItem> mpdu, const WifiT
                                          const WifiTxVector& ackTxVector, const RxSignalInfo& rxInfo,
                                          double snr)
 {
-  Mac48Address sender = mpdu->GetHeader ().GetAddr1 ();
-  NS_LOG_DEBUG ("Received ACK from=" << sender);
+  Mac48Address sender = mpdu->GetHeader ().GetAddr2 ();
+  NS_LOG_DEBUG ("Received ACK from=" << sender << " I'm=" << m_self << ", time=" << Simulator::Now());
 
   NotifyReceivedNormalAck (mpdu);
 
@@ -1211,7 +1223,6 @@ FrameExchangeManager::ReceivedNormalAck (Ptr<WifiMacQueueItem> mpdu, const WifiT
       // the MPDU has been acknowledged, we can now dequeue it if it is stored in a queue
       DequeueMpdu (mpdu);
     }
-
   TransmissionSucceeded ();
 }
 

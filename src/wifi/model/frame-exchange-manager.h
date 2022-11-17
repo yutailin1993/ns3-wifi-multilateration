@@ -174,6 +174,8 @@ public:
    */
   bool IsPromisc (void) const;
 
+  void CSTransmissionEndIfNeeded (void);
+
   /**
    * Get a const reference to the WifiTxTimer object.
    *
@@ -571,8 +573,6 @@ private:
    * Reset this frame exchange manager.
    */
   virtual void Reset (void);
-
-  void CentralizedSchedulerTimeOut (void);
 
   Ptr<WifiMacQueueItem> m_mpdu;                   //!< the MPDU being transmitted
   WifiTxParameters m_txParams;                    //!< the TX parameters for the current frame

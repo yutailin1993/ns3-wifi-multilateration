@@ -915,6 +915,7 @@ HeFrameExchangeManager::TbPpduTimeout (WifiPsduMap* psduMap,
     }
 
   m_psduMap.clear ();
+  // CSTransmissionEndIfNeeded();
 }
 
 void
@@ -983,6 +984,7 @@ HeFrameExchangeManager::BlockAcksInTbPpduTimeout (WifiPsduMap* psduMap,
       TransmissionSucceeded ();
     }
   m_psduMap.clear ();
+  // CSTransmissionEndIfNeeded();
 }
 
 void
@@ -1003,6 +1005,7 @@ HeFrameExchangeManager::BlockAckAfterTbPpduTimeout (Ptr<WifiPsdu> psdu, const Wi
   // the corresponding acknowledgment frame in response to the MPDU sent in the TB PPDU
   // (Sec. 10.22.2.2 of 11ax Draft 3.0)
   m_psduMap.clear ();
+  // CSTransmissionEndIfNeeded();
 }
 
 void
@@ -1026,6 +1029,7 @@ HeFrameExchangeManager::NormalAckTimeout (Ptr<WifiMacQueueItem> mpdu, const Wifi
         }
     }
   m_psduMap.clear ();
+  // CSTransmissionEndIfNeeded();
 }
 
 void
@@ -1049,6 +1053,7 @@ HeFrameExchangeManager::BlockAckTimeout (Ptr<WifiPsdu> psdu, const WifiTxVector&
         }
     }
   m_psduMap.clear ();
+  // CSTransmissionEndIfNeeded();
 }
 
 WifiTxVector

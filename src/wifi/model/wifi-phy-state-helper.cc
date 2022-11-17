@@ -496,6 +496,7 @@ WifiPhyStateHelper::SwitchFromRxEndOk (Ptr<WifiPsdu> psdu, RxSignalInfo rxSignal
   DoSwitchFromRx ();
   if (!m_rxOkCallback.IsNull ())
     {
+      NS_LOG_DEBUG("About to call FeMANAGER receive! Packet from: " << psdu->GetAddr2() << ", to: " << psdu->GetAddr1());
       m_rxOkCallback (psdu, rxSignalInfo, txVector, statusPerMpdu);
     }
 }

@@ -32,7 +32,7 @@
 #include <tgmath.h>
 
 WifiStandard standard = WIFI_STANDARD_80211ax;
-double rss = -80;
+double rss = -70;
 
 void
 SessionOver(FtmSession in_session)
@@ -82,14 +82,14 @@ WifiEnvironment::SetupDevicePhy(int64_t in_seed)
 {
 	m_wifi.SetStandard(standard);
 	std::ostringstream oss;
-	oss << "HtMcs" << m_mcs;
+	oss << "HeMcs" << m_mcs;
 
 	// m_yansWifiPhy.Set("RxGain", DoubleValue(0));
 	m_yansWifiPhy.SetPcapDataLinkType(WifiPhyHelper::DLT_IEEE802_11_RADIO);
 
 	m_yansWifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
-	// m_yansWifiChannel.AddPropagationLoss("ns3::FixedRssLossModel", "Rss", DoubleValue(rss));
-	m_yansWifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel", "Frequency", DoubleValue (5e9));
+	m_yansWifiChannel.AddPropagationLoss("ns3::FixedRssLossModel", "Rss", DoubleValue(rss));
+	// m_yansWifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel", "Frequency", DoubleValue (5e9));
 
 	m_yansWifiPhy.SetChannel(m_yansWifiChannel.Create());
 
@@ -147,7 +147,7 @@ WifiEnvironment::SetupMobility()
 	m_staPosAlloc = 
 		CreateObjectWithAttributes<RandomDiscPositionAllocator> ("X", StringValue("0"),
 																														 "Y", StringValue("0"),
-																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=10]"));
+																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=20]"));
 	m_mobility.SetPositionAllocator(m_staPosAlloc);
 	m_mobility.Install(m_wifiStaNodes);
 	
@@ -222,7 +222,7 @@ WifiEnvironment::SetupApplication()
 			client.SetAttribute("PacketSize", UintegerValue(m_payloadSize));
 
 			ApplicationContainer clientApp = client.Install(m_wifiApNodes.Get(i));
-			clientApp.Start(Seconds(0.1));
+			clientApp.Start(Seconds(1.1));
 			clientApp.Stop(Seconds(m_simulationTime));
 
 			m_clientApps.push_back(clientApp);
@@ -405,7 +405,7 @@ void
 Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
 {
 	const uint16_t numOfMiniSec = 10; // 1 sec
-	int totalBursts = int (in_nBurstsPerSecond*in_simulationTime);
+	int totalBursts = int (in_nBurstsPerSecond*(in_simulationTime-1));
 	// int totalBursts = 54;
 	int burstExponent = int (log2(totalBursts));
 
@@ -417,7 +417,7 @@ Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
 	m_ftmParams.SetMinDeltaFtm(10);
 	m_ftmParams.SetPartialTsfNoPref(true);
 	m_ftmParams.SetAsap(true);
-	m_ftmParams.SetFtmsPerBurst(10);
+	m_ftmParams.SetFtmsPerBurst(5);
 	m_ftmParams.SetBurstPeriod((numOfMiniSec/in_nBurstsPerSecond));
 }
 

@@ -31,6 +31,7 @@
 
 #include <vector>
 #include <tuple>
+#include <queue>
 
 namespace ns3 {
 
@@ -38,6 +39,7 @@ enum TransmissionType
 {
 	FTM,
 	DATA,
+	MGT_OTHERS,
 	ACK // Note that m_currTransType should never be ACK in any circumstance
 };
 
@@ -49,26 +51,37 @@ public:
 											 TransmissionType in_startTransType);
 	virtual ~CentralizedScheduler();
 	void TransmissionStart();
-	bool TransmissionEnd(); 
+	void TransmissionEnd();
+	void BeginTransmit(Ptr<Txop> in_txop);
 	bool GetTransmissionGranted(Ptr<Txop> in_txop);
-	bool ContendForTransmissionGrant(Ptr<Txop> in_txop);
-	void RegisterDevice(int in_deviceNo, Mac48Address in_deviceAddr);
+	bool IsTransmitting();
+	bool EnqueueTransmission(Ptr<Txop> in_txop);
+	void ReleaseLock();
+	Ptr<Txop> DequeueTransmission();
+	Mac48Address GetTransToAddr();
+	Mac48Address GetTransFromAddr();
 
 protected:
 	void DoDispose (void) override;
+	bool GetLock();
 
 private:
 	TransmissionType GetTransmissionType(Ptr<Packet> in_packet, WifiMacHeader in_hdr);
 	void SwitchTransType();
 
-	Mac48Address m_broadcastAddr;
 	Mac48Address m_ftmRequestAddr; // The address that request FTM
 	Mac48Address m_ftmResponseAddr; // The address that response FTM
 	Ptr<SchedulerTimeTracker> m_timeTracker;
-	Ptr<TransmissionSelector> m_transSelector;
 	TransmissionType m_currTransType;
-	std::vector<Mac48Address> m_transPairAddr;
+	Ptr<Txop> m_grantedTxop;
+	std::vector<Mac48Address> m_transPairAddr; // idx 0 is To addr, idx 1 is From Addr
 	std::vector<Mac48Address> m_preTransPairAddr;
+	std::queue<Ptr<Txop>> m_ftmTxopQueue;
+	std::queue<Ptr<Txop>> m_dataTxopQueue;
+	std::queue<Ptr<Txop>> m_mgtOtherQueue;
+	std::queue<Ptr<Txop>> m_broadcastQueue;
+	bool m_isTransmitting;
+	int m_lock;
 	
 };
 

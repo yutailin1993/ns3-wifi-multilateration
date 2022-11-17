@@ -29,16 +29,19 @@
 #include "ns3/mgt-headers.h"
 
 #include "txop.h"
+#include "channel-access-manager.h"
 #include "centralized-scheduler.h"
 #include "scheduler-time-tracker.h"
 #include "transmission-selector.h"
 
 #include <vector>
 #include <tuple>
+#include <queue>
 
 namespace ns3 {
 
 class Txop;
+class ChannelAccessManager;
 
 NS_LOG_COMPONENT_DEFINE ("CentralizedScheduler");
 
@@ -47,23 +50,28 @@ NS_OBJECT_ENSURE_REGISTERED (CentralizedScheduler);
 CentralizedScheduler::CentralizedScheduler(double in_timeTrackerAlpha, Time in_timeTrackerPeriodLength, TransmissionType in_startTransType)
 {
 	// initialize time tracker and transmission selector
-	m_transSelector = CreateObject<TransmissionSelector> ();
 	m_timeTracker = CreateObject<SchedulerTimeTracker> (in_timeTrackerAlpha, in_timeTrackerPeriodLength);
 	m_currTransType = in_startTransType;
-	uint8_t broadcastAddr[6] = {255, 255, 255, 255, 255, 255};
-	m_broadcastAddr.CopyFrom(broadcastAddr);
+	m_grantedTxop = nullptr;
+	m_isTransmitting = false;
+	m_lock = 0;
 
 	if (in_timeTrackerAlpha != 0) {
-		Simulator::Schedule(m_timeTracker->GetFtmTimeLength(), &CentralizedScheduler::SwitchTransType, this);
+		int64_t ftmDurationInt = m_timeTracker->GetFtmTimeLength().GetPicoSeconds();
+		Simulator::Schedule(PicoSeconds(ftmDurationInt-1), &CentralizedScheduler::SwitchTransType, this);
 	}
 }
 
 CentralizedScheduler::~CentralizedScheduler()
 {
-	m_transSelector = 0;
 	m_timeTracker = 0;
+	m_grantedTxop = nullptr;
 	m_preTransPairAddr.clear();
 	m_transPairAddr.clear();
+	m_mgtOtherQueue = std::queue<Ptr<Txop>>();
+	m_dataTxopQueue = std::queue<Ptr<Txop>>();
+	m_ftmTxopQueue = std::queue<Ptr<Txop>>();
+	m_broadcastQueue = std::queue<Ptr<Txop>>();
 }
 
 void
@@ -75,31 +83,47 @@ CentralizedScheduler::DoDispose(void)
 void
 CentralizedScheduler::TransmissionStart()
 {
+	m_isTransmitting = true;
 	m_timeTracker->MarkTransmissionStartTime();
-
 }
 
 void
 CentralizedScheduler::SwitchTransType()
 {
+	NS_LOG_DEBUG("Swtich type, current type: " << m_currTransType << ", time: " << Simulator::Now());
 	switch (m_currTransType)
 	{
 		case TransmissionType::DATA:
 			m_currTransType = TransmissionType::FTM;
 			Simulator::Schedule(m_timeTracker->GetFtmTimeLength(), &CentralizedScheduler::SwitchTransType, this);
-			return;
+			break;
 
 		case TransmissionType::FTM:
 			m_currTransType = TransmissionType::DATA;
+			m_ftmTxopQueue = std::queue<Ptr<Txop>>();
 			Simulator::Schedule(m_timeTracker->GetDataTimeLength(), &CentralizedScheduler::SwitchTransType, this);
-			return;
+			break;
 	
 		default:
 			NS_LOG_ERROR("TransmissionType should be either FTM or DATA!!");
 	}
+
+	if (IsTransmitting()) {
+    return;
+  }
+
+  Ptr<Txop> candidateTxop = DequeueTransmission();
+  if (candidateTxop != nullptr) {
+    // WifiMacHeader hdr = candidateTxop->GetWifiMacQueue()->Peek()->GetHeader();
+    // NS_LOG_DEBUG("Access dequeue, trans type: " << hdr.GetTypeString() << ", from=" << hdr.GetAddr2() << ", to=" << hdr.GetAddr1() << ", time: " << Simulator::Now());
+
+    Simulator::ScheduleNow(&Txop::CSRequestAccess, candidateTxop);
+	}
+
+	return;
 }
 
-bool
+void
 CentralizedScheduler::TransmissionEnd()
 {
 	// Mark Transmission End, call scheduleNewTransmission()
@@ -108,55 +132,85 @@ CentralizedScheduler::TransmissionEnd()
 
 	std::copy(m_transPairAddr.begin(), m_transPairAddr.end(), std::back_inserter(m_preTransPairAddr));
 	m_transPairAddr.clear();
+	m_grantedTxop = nullptr;
 
-	m_transSelector->ResetCandidateAddrs();
-	m_transSelector->ReleaseLock();
+	m_isTransmitting = false;
 
-	// std::cout << "Transmission End at time: " << m_timeTracker->GetTransmissionEndTime() << std::endl;
+	Ptr<Txop> candidateTxop = DequeueTransmission();
+	if (candidateTxop != nullptr) {
+		
+		NS_LOG_DEBUG("Transmission end dequeue, {mQ_size, dQ_size, fQ_size, bQ_size}={" <<
+							 m_mgtOtherQueue.size() << "," << m_dataTxopQueue.size() << "," << 
+							 m_ftmTxopQueue.size() << "," << m_broadcastQueue.size() << "}, time: " << Simulator::Now());
 
-	return true;
+		Simulator::ScheduleNow(&Txop::CSRequestAccess, candidateTxop);
+	}
 }
 
 bool
 CentralizedScheduler::GetTransmissionGranted(Ptr<Txop> in_txop)
 {
-	Ptr<WifiMacQueue> queue = in_txop->GetWifiMacQueue();
-
-	if (queue->IsEmpty()) {
-		return false;
-	}
-
-	WifiMacHeader hdr = queue->Peek()->GetItem()->GetHeader();
-	Ptr<const Packet> packet = queue->Peek()->GetItem()->GetPacket();
+	Ptr<WifiMacQueue> macQueue = in_txop->GetWifiMacQueue();
+	WifiMacHeader hdr = macQueue->Peek()->GetItem()->GetHeader();
+	Ptr<const Packet> packet = macQueue->Peek()->GetItem()->GetPacket();
 	TransmissionType type = GetTransmissionType (packet->Copy(), hdr);
 
-	if (hdr.GetAddr1() == m_broadcastAddr) {
-		return true; // just let it through
-	}
+	// if (hdr.GetAddr1().IsBroadcast()) {
+	// 	return true; // just let it through
+	// }
 	
-	if (type != TransmissionType::ACK && type != m_currTransType) {
+	if ((type != TransmissionType::ACK && type != m_currTransType && type != TransmissionType::MGT_OTHERS && !hdr.GetAddr1().IsBroadcast()) ||
+			(m_grantedTxop == nullptr || in_txop != m_grantedTxop)) {
 		return false;
 	}
 
-	if (m_transPairAddr[0] != hdr.GetAddr1() || m_transPairAddr[1] != hdr.GetAddr2()) { // not granted transmission pair
-		// uint8_t a[6], b[6];
-		// hdr.GetAddr2().CopyTo(a);
-		// hdr.GetAddr1().CopyTo(b);
-		// std::cout << "Contend fail" << " Trans Addr: " << int(a[5]) << ", Recv Addr: " << int(b[5]) << " Time: " << Simulator::Now() << std::endl;
-		return false;
-	}
+	NS_LOG_DEBUG("Get Transmit DATA Type: " << hdr.GetTypeString() << ", from=" << 
+							 hdr.GetAddr2() << ", to=" << hdr.GetAddr1() << ", {mQ_size, dQ_size, fQ_size, bQ_size}={" <<
+							 m_mgtOtherQueue.size() << "," << m_dataTxopQueue.size() << "," << 
+							 m_ftmTxopQueue.size() << "," << m_broadcastQueue.size() << "}, time: " << Simulator::Now());
 
-	/* debug */
-	uint8_t a[6], b[6];
-	hdr.GetAddr2().CopyTo(a);
-	hdr.GetAddr1().CopyTo(b);
-
-
-	// std::cout << "Sender Addr: " << int(a[5]) << " Receiver Addr: " << int(b[5]) << ", Time: " << Simulator::Now() << std::endl;
-
-	/* end debug */
-
+	ReleaseLock();
+	TransmissionStart();
 	return true;
+}
+
+void
+CentralizedScheduler::BeginTransmit(Ptr<Txop> in_txop)
+{
+	Ptr<WifiMacQueue> macQueue = in_txop->GetWifiMacQueue();
+	WifiMacHeader hdr = macQueue->Peek()->GetItem()->GetHeader();
+	Ptr<const Packet> packet = macQueue->Peek()->GetItem()->GetPacket();
+
+	NS_LOG_DEBUG("Get Transmit DATA Type: " << hdr.GetTypeString() << ", from=" << 
+							 hdr.GetAddr2() << ", to=" << hdr.GetAddr1() << ", {mQ_size, dQ_size, fQ_size, bQ_size}={" <<
+							 m_mgtOtherQueue.size() << "," << m_dataTxopQueue.size() << "," << 
+							 m_ftmTxopQueue.size() << "," << m_broadcastQueue.size() << "}, time: " << Simulator::Now());
+	
+	ReleaseLock();
+	TransmissionStart();
+}
+
+void
+CentralizedScheduler::ReleaseLock()
+{
+	m_lock = 0;
+}
+
+bool
+CentralizedScheduler::GetLock()
+{
+	if (m_lock == 0) {
+		m_lock++;
+		return true;
+	} else {
+		return false;
+	}
+}
+
+bool
+CentralizedScheduler::IsTransmitting()
+{
+	return m_isTransmitting;
 }
 
 TransmissionType
@@ -172,62 +226,109 @@ CentralizedScheduler::GetTransmissionType(Ptr<Packet> in_packet, WifiMacHeader i
 
 		if (actionHdr.GetCategory() == WifiActionHeader::PUBLIC_ACTION) {
 			return TransmissionType::FTM;
+		} else {
+			return TransmissionType::MGT_OTHERS;
 		}
+	} else if (in_hdr.IsMgt()) {
+		return TransmissionType::MGT_OTHERS;
 	}
 	return TransmissionType::DATA;
 }
 
 bool
-CentralizedScheduler::ContendForTransmissionGrant(Ptr<Txop> in_txop)
+CentralizedScheduler::EnqueueTransmission(Ptr<Txop> in_txop)
 {
-	Ptr<WifiMacQueue> queue = in_txop->GetWifiMacQueue();
+	Ptr<WifiMacQueue> macQueue = in_txop->GetWifiMacQueue();
 
-	if (queue->IsEmpty()) {
+	if (macQueue->IsEmpty()) {
 		return false;
 	}
 
-	WifiMacHeader hdr = queue->Peek()->GetItem()->GetHeader();
-	Ptr<const Packet> packet = queue->Peek()->GetItem()->GetPacket();
+	WifiMacHeader hdr = macQueue->Peek()->GetItem()->GetHeader();
+	Ptr<const Packet> packet = macQueue->Peek()->GetItem()->GetPacket();
 	TransmissionType type = GetTransmissionType (packet->Copy(), hdr);
 
-	if (hdr.GetAddr1() == m_broadcastAddr) {
-		return false;
+	if (hdr.GetAddr1().IsBroadcast()) {
+		m_broadcastQueue.push(in_txop);
+	} else if (type == TransmissionType::DATA) {
+		m_dataTxopQueue.push(in_txop);
+	} else if (type == TransmissionType::FTM) {
+		m_ftmTxopQueue.push(in_txop);
+	} else if (type == TransmissionType::MGT_OTHERS) {
+		m_mgtOtherQueue.push(in_txop);
+	} else {
+		NS_FATAL_ERROR("Unable to Enqueue, type not found");
 	}
+	
+	NS_LOG_DEBUG("Enqueue, DATA Type: " << hdr.GetTypeString() << ", from=" << 
+							 hdr.GetAddr2() << ", to=" << hdr.GetAddr1() << ", {mQ_size, dQ_size, fQ_size, bQ_size}={" <<
+							 m_mgtOtherQueue.size() << "," << m_dataTxopQueue.size() << "," << 
+							 m_ftmTxopQueue.size() << "," << m_broadcastQueue.size() << "}, time: " << Simulator::Now());
 
-	if (type != m_currTransType) {
-		return false;
-	}
+	return true;
 
-	/* debug */
-	uint8_t a[6], b[6];
-	hdr.GetAddr1().CopyTo(a);
-	hdr.GetAddr2().CopyTo(b);
-
-	/* end debug */
-
-	if (std::find(m_preTransPairAddr.begin(), m_preTransPairAddr.end(), hdr.GetAddr1()) != m_preTransPairAddr.end() &&
-			std::find(m_preTransPairAddr.begin(), m_preTransPairAddr.end(), hdr.GetAddr2()) != m_preTransPairAddr.end()) { // not granted transmission pair
-		return false;
-	}
-
-	if (m_transSelector->GetLock()) {
-		m_transSelector->SetCandidate(hdr);
-		std::vector<Mac48Address> candidateAddrs = m_transSelector->GetCandidateAddrs();
-		for (auto &addrIter : candidateAddrs) {
-			m_transPairAddr.push_back(addrIter);
-		}
-
-		// std::cout << "Trans Type: " << int(m_currTransType) << " Contend Trans: " << int(b[5]) << ", Recv: " << int(a[5]) << ", Success" << std::endl;
-		return true;
-	}
-
-	return false;
 }
 
-void
-CentralizedScheduler::RegisterDevice(int in_deviceNo, Mac48Address in_deviceAddr)
+Ptr<Txop>
+CentralizedScheduler::DequeueTransmission()
 {
-	m_transSelector->RegisterDevice(in_deviceNo, in_deviceAddr);
+	if (!GetLock()) {
+		return nullptr;
+	}
+
+	Ptr<Txop> candidateTxop;
+	if (!m_broadcastQueue.empty()) {
+		candidateTxop = m_broadcastQueue.front();
+		m_broadcastQueue.pop();
+	} else if (!m_mgtOtherQueue.empty()) {
+		candidateTxop = m_mgtOtherQueue.front();
+		m_mgtOtherQueue.pop();
+	} else if (m_currTransType == TransmissionType::DATA && !m_dataTxopQueue.empty()) {
+		candidateTxop = m_dataTxopQueue.front();
+		m_dataTxopQueue.pop();
+	} else if (m_currTransType == TransmissionType::FTM && !m_ftmTxopQueue.empty()) {
+		candidateTxop = m_ftmTxopQueue.front();
+		m_ftmTxopQueue.pop();
+	} else {
+		NS_LOG_DEBUG("Centralized Scheduler queue empty.");
+		ReleaseLock();
+		return nullptr;
+	}
+
+	Ptr<WifiMacQueue> macQueue = candidateTxop->GetWifiMacQueue();
+	
+	if (macQueue->IsEmpty()) {
+		ReleaseLock();
+		return nullptr;
+	}
+
+	WifiMacHeader hdr = macQueue->Peek()->GetItem()->GetHeader();
+	Ptr<const Packet> packet = macQueue->Peek()->GetItem()->GetPacket();
+	TransmissionType type = GetTransmissionType (packet->Copy(), hdr);
+
+	m_transPairAddr.push_back(hdr.GetAddr1());
+	m_transPairAddr.push_back(hdr.GetAddr2());
+
+	m_grantedTxop = candidateTxop;
+
+	NS_LOG_DEBUG("Dequeue, allow data type: " << m_currTransType << ", CS queue type: " << type << ", DATA Type: " <<
+							 hdr.GetTypeString() << ", from=" << hdr.GetAddr2() << ", to=" << hdr.GetAddr1() << 
+							 ", {mQ_size, dQ_size, fQ_size, bQ_size}={" << m_mgtOtherQueue.size() << "," << m_dataTxopQueue.size() << "," << 
+							 m_ftmTxopQueue.size() << "," << m_broadcastQueue.size() << "}, time: " << Simulator::Now());
+
+	return candidateTxop;
+}
+
+Mac48Address
+CentralizedScheduler::GetTransFromAddr()
+{
+	return m_transPairAddr[1];
+}
+
+Mac48Address
+CentralizedScheduler::GetTransToAddr()
+{
+	return m_transPairAddr[0];
 }
 
 SchedulerPhyRxProxy::SchedulerPhyRxProxy(Ptr<CentralizedScheduler> in_scheduler, Mac48Address in_mac_addr)
@@ -257,37 +358,14 @@ SchedulerPhyRxProxy::PhyRxBegin(Ptr<const Packet> in_packet, RxPowerWattPerChann
 	WifiMacHeader hdr;
 	cpy_packet->RemoveHeader(hdr);
 
-	/* debug */
-	uint8_t a[6], b[6], c[6];
-
-	m_mac_addr.CopyTo(a);
-	hdr.GetAddr1().CopyTo(b);
-	hdr.GetAddr2().CopyTo(c);
-
-	if (hdr.IsMgt() && hdr.IsAction()) {
-		WifiActionHeader actionHdr;
-		cpy_packet->RemoveHeader(actionHdr);
-
-		if (actionHdr.GetCategory() == WifiActionHeader::PUBLIC_ACTION) {
-			if (actionHdr.GetAction().publicAction == WifiActionHeader::FTM_REQUEST) {
-				// std::cout << int (a[5]) << " Got FTM_REQUEST" << " From " << int(c[5]) << ", To " << int(b[5]) << " Time: " << Simulator::Now() << std::endl;
-			} else if (actionHdr.GetAction().publicAction == WifiActionHeader::FTM_RESPONSE) {
-				// std::cout << int (a[5]) << " Got FTM_RESPONSE" << " From " << int(c[5]) << ", To " << int(b[5])<< " Time: " << Simulator::Now() << std::endl;
-			}
-		}
-	} else if (hdr.IsData()) {
-		// std::cout << int (a[5]) << "Got data" << " From " << int(c[5]) << ", To " << int(b[5]) << " Time: " << Simulator::Now() << std::endl; 
+	if (hdr.GetAddr1() != m_mac_addr) {
+		return;
 	}
 
-	if (hdr.IsAck() || hdr.IsBlockAck()) {
-		// std::cout << int (a[5]) << " Got ACK" << " From " << int(c[5]) << ", To " << int(b[5])<< " Time: " << Simulator::Now() << std::endl;
-	}
-	/* end debug*/
 
 	if (hdr.IsAck() || hdr.IsBlockAck()) {
-		if (hdr.GetAddr1() == m_mac_addr) {
-			m_centralized_scheduler->TransmissionEnd();
-		}
+		NS_LOG_DEBUG("PHY Got ACK that is not DATA, from: " << hdr.GetAddr2() << ", I'm: " << m_mac_addr << " time: " << Simulator::Now());
+		m_centralized_scheduler->TransmissionEnd();
 	}
 }
 

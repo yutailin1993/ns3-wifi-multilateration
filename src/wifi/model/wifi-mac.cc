@@ -613,8 +613,13 @@ WifiMac::ConfigureDcf (Ptr<Txop> dcf, uint32_t cwmin, uint32_t cwmax, bool isDss
   switch (ac)
     {
     case AC_VO:
-      dcf->SetMinCw ((cwmin + 1) / 4 - 1);
-      dcf->SetMaxCw ((cwmin + 1) / 2 - 1);
+      if (m_cs_enabled) {
+        dcf->SetMinCw (cwmin);
+        dcf->SetMaxCw (cwmin);
+      } else {
+        dcf->SetMinCw ((cwmin + 1) / 4 - 1);
+        dcf->SetMaxCw ((cwmin + 1) / 2 - 1);
+      }
       dcf->SetAifsn (2);
       if (isDsss)
         {
@@ -626,7 +631,11 @@ WifiMac::ConfigureDcf (Ptr<Txop> dcf, uint32_t cwmin, uint32_t cwmax, bool isDss
         }
       break;
     case AC_VI:
-      dcf->SetMinCw ((cwmin + 1) / 2 - 1);
+      if (m_cs_enabled) {
+        dcf->SetMinCw (cwmin);
+      } else {
+        dcf->SetMinCw ((cwmin + 1) / 2 - 1);
+      }
       dcf->SetMaxCw (cwmin);
       dcf->SetAifsn (2);
       if (isDsss)
@@ -1580,13 +1589,13 @@ WifiMac::SetupCentralizedScheduler(int deviceNo, Ptr<CentralizedScheduler> sched
     NS_FATAL_ERROR ("Centralized Scheduler is not enabled!!");
   } else { // centralized scheduler enabled
     m_centralized_scheduler = scheduler;
-    m_centralized_scheduler->RegisterDevice(deviceNo, m_address);
 
-    m_scheduler_proxy = CreateObject<SchedulerPhyRxProxy> (m_centralized_scheduler, m_address);
-    m_scheduler_proxy->SetPhyRxCallBack(m_cs_enabled, GetWifiPhy());
+    // m_scheduler_proxy = CreateObject<SchedulerPhyRxProxy> (m_centralized_scheduler, m_address);
+    // m_scheduler_proxy->SetPhyRxCallBack(m_cs_enabled, GetWifiPhy());
 
     m_channelAccessManager->SetupCentralizedScheduler(m_centralized_scheduler);
     m_feManager->SetCentralizedScheduler(m_centralized_scheduler);
+    m_phy->SetSlot(MicroSeconds(1));
 
   }
 }

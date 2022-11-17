@@ -49,7 +49,7 @@ private:
 	int m_lock;
 
 	std::map<const int, Mac48Address> m_nodeAddrTable;
-	std::vector<Mac48Address> m_candidateAddrs;
+	std::vector<Mac48Address> m_candidateAddrs; // idx 0 is To Addr, idx 1 is From Addr
 
 };
 

@@ -543,12 +543,15 @@ PhyEntity::DoStartReceivePayload (Ptr<Event> event)
 {
   NS_LOG_FUNCTION (this << *event);
   Ptr<const WifiPpdu> ppdu = event->GetPpdu ();
-  NS_LOG_DEBUG ("Receiving PSDU");
   uint16_t staId = GetStaId (ppdu);
   m_signalNoiseMap.insert ({std::make_pair (ppdu->GetUid (), staId), SignalNoiseDbm ()});
   m_statusPerMpduMap.insert ({std::make_pair (ppdu->GetUid (), staId), std::vector<bool> ()});
   ScheduleEndOfMpdus (event);
-  m_endRxPayloadEvents.push_back (Simulator::Schedule (ppdu->GetTxDuration () - CalculatePhyPreambleAndHeaderDuration (event->GetTxVector ()),
+  Time duration = ppdu->GetTxDuration () - CalculatePhyPreambleAndHeaderDuration (event->GetTxVector ());
+  NS_LOG_DEBUG("Receiving PSDU PPDU UID: " << m_globalPpduUid << ", duration: " << duration << 
+               ", packet from: " << ppdu->GetPsdu()->GetAddr2() << " to: " << 
+               ppdu->GetPsdu()->GetAddr1() << ", time: " << Simulator::Now());
+  m_endRxPayloadEvents.push_back (Simulator::Schedule (duration,
                                                        &PhyEntity::EndReceivePayload, this, event));
 }
 
@@ -819,7 +822,10 @@ PhyEntity::EndPreambleDetectionPeriod (Ptr<Event> event)
   NS_ASSERT (maxEvent != 0);
   if (maxEvent != event)
     {
-      NS_LOG_DEBUG ("Receiver got a stronger packet with UID " << maxEvent->GetPpdu ()->GetUid () << " during preamble detection: drop packet with UID " << event->GetPpdu ()->GetUid ());
+      // NS_LOG_DEBUG ("Receiver got a stronger packet with UID " << maxEvent->GetPpdu ()->GetUid () << " during preamble detection: drop packet with UID " << event->GetPpdu ()->GetUid ());
+      NS_LOG_DEBUG ("Receiver got a stronger packet with transpair f: " << maxEvent->GetPpdu ()->GetPsdu()->GetAddr2() << ", t: " << 
+                    maxEvent->GetPpdu()->GetPsdu()->GetAddr1() << " during preamble detection: Drop packet from: " << 
+                    event->GetPpdu()->GetPsdu()->GetAddr2() << ", to: " << event->GetPpdu()->GetPsdu()->GetAddr1());
       m_wifiPhy->NotifyRxDrop (GetAddressedPsduInPpdu (event->GetPpdu ()), BUSY_DECODING_PREAMBLE);
       auto it = m_wifiPhy->m_currentPreambleEvents.find (std::make_pair (event->GetPpdu ()->GetUid (), event->GetPpdu ()->GetPreamble ()));
       m_wifiPhy->m_currentPreambleEvents.erase (it);
@@ -882,7 +888,7 @@ PhyEntity::EndPreambleDetectionPeriod (Ptr<Event> event)
     }
   else
     {
-      NS_LOG_DEBUG ("Drop packet because PHY preamble detection failed");
+      NS_LOG_DEBUG ("Drop packet because PHY preamble detection failed " << " from: " << maxEvent->GetPpdu()->GetPsdu()->GetAddr2() << ", to: " << maxEvent->GetPpdu()->GetPsdu()->GetAddr1());
       // Like CCA-SD, CCA-ED is governed by the 4 us CCA window to flag CCA-BUSY
       // for any received signal greater than the CCA-ED threshold.
       DropPreambleEvent (m_wifiPhy->m_currentEvent->GetPpdu (), PREAMBLE_DETECT_FAILURE, m_wifiPhy->m_currentEvent->GetEndTime (), m_wifiPhy->GetMeasurementChannelWidth (m_wifiPhy->m_currentEvent->GetPpdu ()));

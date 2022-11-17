@@ -101,6 +101,8 @@ public:
    */
   bool NeedBackoffUponAccess (Ptr<Txop> txop);
 
+  void GoThroughCS(Ptr<Txop> txop);
+
   /**
    * \param txop a Txop
    *
@@ -110,6 +112,10 @@ public:
    * is granted if it ever gets granted.
    */
   void RequestAccess (Ptr<Txop> txop);
+
+  void RequestAccessDir (Ptr<Txop> txop);
+
+  Time GetLastTxDuration ();
 
   /**
    * Access will never be granted to the medium _before_

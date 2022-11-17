@@ -1122,6 +1122,7 @@ HtFrameExchangeManager::BlockAckTimeout (Ptr<WifiPsdu> psdu, const WifiTxVector&
     }
 
   m_psdu = 0;
+  CSTransmissionEndIfNeeded();
   TransmissionFailed ();
 }
 
