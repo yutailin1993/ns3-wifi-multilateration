@@ -121,6 +121,8 @@ public:
    * \param txMiddle MacTxMiddle to associate.
    */
   void SetTxMiddle (const Ptr<MacTxMiddle> txMiddle);
+  void CSRequestAccess();
+
 
   /**
    * \param callback the callback to invoke when an MPDU is dropped
@@ -159,6 +161,12 @@ public:
    *        Value zero corresponds to default Txop.
    */
   void SetTxopLimit (Time txopLimit);
+  /**
+   * Set the Centralized Scheduler Enabled.
+   *
+   * \param isEnabled enabled Cenetralized Scheduler.
+   */
+  void SetCsEnable (bool isEnabled);
   /**
    * Return the minimum contention window size.
    *
@@ -261,6 +269,10 @@ public:
    * slots specified.
    */
   void StartBackoffNow (uint32_t nSlots);
+  /**
+   * Request access from Txop if needed.
+   */
+  virtual void StartAccessIfNeeded (void);
 
 protected:
   ///< ChannelAccessManager associated class
@@ -284,10 +296,6 @@ protected:
    * Generate a new backoff now.
    */
   virtual void GenerateBackoff (void);
-  /**
-   * Request access from Txop if needed.
-   */
-  virtual void StartAccessIfNeeded (void);
   /**
    * Request access to the ChannelAccessManager
    */
@@ -331,6 +339,7 @@ protected:
   uint32_t m_backoff;            //!< the current backoff
   ChannelAccessStatus m_access;  //!< channel access status
   uint32_t m_backoffSlots;       //!< the number of backoff slots
+  bool m_cs_enabled;             //!< whether Centralized Scheduler is enabled
   /**
    * the backoffStart variable is used to keep track of the
    * time at which a backoff was started or the time at which

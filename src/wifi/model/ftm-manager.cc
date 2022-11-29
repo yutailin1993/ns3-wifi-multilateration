@@ -20,6 +20,7 @@
 
 #include "ftm-manager.h"
 #include "ns3/core-module.h"
+#include "ns3/wifi-mac-header.h"
 
 
 namespace ns3 {
@@ -200,7 +201,7 @@ FtmManager::CreateNewSession (Mac48Address partner, FtmSession::SessionType type
 void
 FtmManager::SendPacket (Ptr<Packet> packet, WifiMacHeader hdr)
 {
-  hdr.SetType(WIFI_MAC_MGT_ACTION);
+  hdr.SetType(WifiMacType::WIFI_MAC_MGT_ACTION);
   hdr.SetAddr2(m_mac_address);
   hdr.SetAddr3(m_mac_address);
   hdr.SetDsNotTo();

@@ -611,6 +611,7 @@ QosFrameExchangeManager::TransmissionFailed (void)
         }
     }
   m_initialFrame = false;
+  CSTransmissionEndIfNeeded();
 }
 
 void

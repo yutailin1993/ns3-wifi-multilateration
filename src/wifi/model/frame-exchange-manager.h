@@ -35,6 +35,7 @@
 #include "ns3/wifi-protection-manager.h"
 #include "ns3/wifi-ack-manager.h"
 #include "channel-access-manager.h"
+#include "centralized-scheduler.h"
 
 namespace ns3 {
 
@@ -173,6 +174,8 @@ public:
    */
   bool IsPromisc (void) const;
 
+  void CSTransmissionEndIfNeeded (void);
+
   /**
    * Get a const reference to the WifiTxTimer object.
    *
@@ -241,6 +244,15 @@ public:
    * into off mode, pending MAC transmissions (RTS, CTS, Data and Ack) are cancelled.
    */
   void NotifyOffNow (void);
+
+  /**
+   * Setup Centralized Scheduler for frame exchange manager. Note that scheduler should
+   * be the only one scheduler across all nodes.
+   * 
+   * @param scheduler centralized scheduler
+   */
+  
+  void SetCentralizedScheduler (Ptr<CentralizedScheduler> scheduler);
 
 protected:
   void DoDispose () override;
@@ -566,8 +578,10 @@ private:
   WifiTxParameters m_txParams;                    //!< the TX parameters for the current frame
   Ptr<Packet> m_fragmentedPacket;                 //!< the MSDU being fragmented
   bool m_moreFragments;                           //!< true if a fragment has to be sent after a SIFS
+  bool m_cs_enabled;                              //!< centralized scheduler enabled
   Ptr<WifiProtectionManager> m_protectionManager; //!< Protection manager
   Ptr<WifiAckManager> m_ackManager;               //!< Acknowledgment manager
+  Ptr<CentralizedScheduler> m_centralizedScheduler; //!< Centralized Scheduler
 };
 
 } //namespace ns3

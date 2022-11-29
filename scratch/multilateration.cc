@@ -123,7 +123,7 @@ GetThroughput(ApplicationContainer in_serverApp, uint32_t in_payloadSize, double
 		rxBytes += in_payloadSize * DynamicCast<UdpServer> (in_serverApp.Get(i))->GetReceived();
 	}
 
-	throughput = (rxBytes * 8) / (in_simulationTime * 1000000.0); // Mbit / s
+	throughput = (rxBytes * 8) / ((in_simulationTime-1) * 1000000.0); // Mbit / s
 
 	return throughput;
 }
@@ -161,6 +161,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	RngSeedManager::SetRun(in_seed);
 
 	Config::SetDefault("ns3::WifiMac::FTM_Enabled", BooleanValue(true));
+	Config::SetDefault("ns3::WifiMac::CentralizedScheduler_Enabled", BooleanValue(true));
 
 	WifiEnvironment wifiEnv = WifiEnvironment(in_envConf.nAPs,
 																						in_envConf.nSTAs,
@@ -174,7 +175,8 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	wifiEnv.CreateNodes();
 	wifiEnv.SetupDevicePhy(in_seed);
 	wifiEnv.SetupMobility();
-	wifiEnv.SetupFTMEnv();
+	wifiEnv.ConstructDeviceLists();
+	wifiEnv.SetupCentralizedScheduler(0.1, MilliSeconds(1000/in_nBursts), TransmissionType::FTM);
 	
 	wifiEnv.SetupApplication();
 
@@ -187,11 +189,11 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	SessionList allSessions = positioning.GetAllSessions();
 
 	for (Ptr<FtmSession> session : allSessions) {
-		Simulator::ScheduleNow(&RunSession, session);
+		Simulator::Schedule(Seconds(1), &RunSession, session);
 	}
 	
 	Simulator::Schedule (Seconds (0.0), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
-	Simulator::Stop(Seconds (in_simulationTime+1));
+	Simulator::Stop(Seconds (in_simulationTime+2));
 	Simulator::Run();
 	
 	ApplicationContainer serverApp = wifiEnv.GetServerApps();
@@ -239,22 +241,36 @@ main(int argc, char *argv[])
 {
 	Time::SetResolution(Time::PS);
 
-	const double simulationTime = 8.0;
+	// LogComponentEnable("YansWifiChannel", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("PhyEntity", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("WifiPhyStateHelper", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("WifiMac", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("Txop", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("ChannelAccessManager", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("CentralizedScheduler", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("FrameExchangeManager", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("QosFrameExchangeManager", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("HtFrameExchangeManager", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("VhtFrameExchangeManager", LOG_LEVEL_DEBUG);
+	// LogComponentEnable("FtmSession", LOG_LEVEL_ALL);
+
+	const double simulationTime = 9.0;
 
 	
 	std::cout << "begin simulation" << std::endl;
 
 	// size_t staPerAP = 10;
 	int bps = 2;
-	for (size_t staPerAP=2; staPerAP<15; staPerAP+=2) {
-		std::cout << "# STA: " << staPerAP*3 << ", Burst Per Second: " << bps << std::endl;
+  
+	for (size_t staPerAP=12; staPerAP<13; staPerAP+=1) {
+		std::cout << "# STA: " << staPerAP*3 << ", With CS " << std::endl;
 		std::vector<std::tuple<double, double, double, double, double>> resultsList;
 		
 		EnvConfig envConf = {
 			3, // nAPs
 			3*staPerAP, // nSTAs
 			4, // mcs
-			80 // channelWidth
+			40 // channelWidth
 		};
 		UdpConfig udpConf = {
 			1500, // payloadSize
@@ -262,16 +278,39 @@ main(int argc, char *argv[])
 		};
 
 		for (int simNum=1; simNum<11; simNum++) {
+			std::cout << "Simulation: " << simNum << std::endl;
 			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRED_ERROR, envConf, udpConf, simulationTime));
+			
+			std::cout << "PacketLossRate" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<3>(tupItr) << "," << std::endl;
+			}
+			std::cout << "FtmDialogLossRate" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<4>(tupItr) << "," << std::endl;
+			}
+		
+			std::cout << "TotalThroughput" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<0>(tupItr) << "," << std::endl;
+			}
+			std::cout << "AvgThroughput" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<1>(tupItr) << "," << std::endl;
+			}
+			std::cout << "DistErr" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<2>(tupItr) << "," << std::endl;
+			}
 		}
 
 		std::cout << "PacketLossRate" << std::endl;
 		for (auto &tupItr : resultsList) {
-			std::cout << std::get<0>(tupItr) << "," << std::endl;
+			std::cout << std::get<3>(tupItr) << "," << std::endl;
 		}
 		std::cout << "FtmDialogLossRate" << std::endl;
 		for (auto &tupItr : resultsList) {
-			std::cout << std::get<1>(tupItr) << "," << std::endl;
+			std::cout << std::get<4>(tupItr) << "," << std::endl;
 		}
 		
 		std::cout << "TotalThroughput" << std::endl;

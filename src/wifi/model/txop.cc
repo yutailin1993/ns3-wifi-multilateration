@@ -100,6 +100,7 @@ Txop::Txop (Ptr<WifiMacQueue> queue)
 {
   NS_LOG_FUNCTION (this);
   m_rng = CreateObject<UniformRandomVariable> ();
+  m_cs_enabled = false;
 }
 
 Txop::~Txop ()
@@ -116,6 +117,7 @@ Txop::DoDispose (void)
   m_rng = 0;
   m_txMiddle = 0;
   m_channelAccessManager = 0;
+  m_cs_enabled = false;
 }
 
 void
@@ -222,7 +224,11 @@ void
 Txop::UpdateBackoffSlotsNow (uint32_t nSlots, Time backoffUpdateBound)
 {
   NS_LOG_FUNCTION (this << nSlots << backoffUpdateBound);
-  m_backoffSlots -= nSlots;
+  if (nSlots > m_backoffSlots) {
+    m_backoffSlots = 0;
+  } else {
+    m_backoffSlots -= nSlots;
+  }
   m_backoffStart = backoffUpdateBound;
   NS_LOG_DEBUG ("update slots=" << nSlots << " slots, backoff=" << m_backoffSlots);
 }
@@ -256,6 +262,12 @@ Txop::SetTxopLimit (Time txopLimit)
   NS_LOG_FUNCTION (this << txopLimit);
   NS_ASSERT_MSG ((txopLimit.GetMicroSeconds () % 32 == 0), "The TXOP limit must be expressed in multiple of 32 microseconds!");
   m_txopLimit = txopLimit;
+}
+
+void
+Txop::SetCsEnable (bool isEnabled)
+{
+  m_cs_enabled = isEnabled;
 }
 
 uint32_t
@@ -297,12 +309,20 @@ Txop::Queue (Ptr<Packet> packet, const WifiMacHeader &hdr)
   // remove the priority tag attached, if any
   SocketPriorityTag priorityTag;
   packet->RemovePacketTag (priorityTag);
-  if (m_channelAccessManager->NeedBackoffUponAccess (this))
-    {
+  if (!m_cs_enabled) {
+    if (m_channelAccessManager->NeedBackoffUponAccess (this)) {
       GenerateBackoff ();
     }
+  }
   m_queue->Enqueue (Create<WifiMacQueueItem> (packet, hdr));
   StartAccessIfNeeded ();
+}
+
+void
+Txop::CSRequestAccess()
+{
+  NS_LOG_FUNCTION (this);
+  m_channelAccessManager->RequestAccessDir(this);
 }
 
 int64_t
@@ -356,7 +376,9 @@ Txop::NotifyChannelReleased (void)
 {
   NS_LOG_FUNCTION (this);
   m_access = NOT_REQUESTED;
-  GenerateBackoff ();
+  if (!m_cs_enabled) {
+    GenerateBackoff ();
+  }
   if (HasFramesToTransmit ())
     {
       Simulator::ScheduleNow (&Txop::RequestAccess, this);

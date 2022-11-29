@@ -20,6 +20,8 @@
 
 #include "ns3/log.h"
 #include "ns3/simulator.h"
+#include "ns3/wifi-mac-queue.h"
+#include "ns3/wifi-mac-queue-item.h"
 #include "channel-access-manager.h"
 #include "txop.h"
 #include "wifi-phy-listener.h"
@@ -114,6 +116,7 @@ ChannelAccessManager::ChannelAccessManager ()
     m_lastSwitchingDuration (MicroSeconds (0)),
     m_sleeping (false),
     m_off (false),
+    m_cs_enabled (false),
     m_phyListener (0)
 {
   NS_LOG_FUNCTION (this);
@@ -137,6 +140,7 @@ ChannelAccessManager::DoDispose (void)
     }
   m_phy = 0;
   m_feManager = 0;
+  m_centralizedScheduler = 0;
 }
 
 void
@@ -168,6 +172,17 @@ ChannelAccessManager::SetupFrameExchangeManager (Ptr<FrameExchangeManager> feMan
   NS_LOG_FUNCTION (this << feManager);
   m_feManager = feManager;
   m_feManager->SetChannelAccessManager (this);
+}
+
+void
+ChannelAccessManager::SetupCentralizedScheduler (Ptr<CentralizedScheduler> scheduler)
+{
+  NS_LOG_FUNCTION (this << scheduler);
+  m_centralizedScheduler = scheduler;
+  m_cs_enabled = true;
+  for (auto &i : m_txops) {
+    i->SetCsEnable(m_cs_enabled);
+  }
 }
 
 Time
@@ -232,6 +247,27 @@ ChannelAccessManager::IsBusy (void) const
   return false;
 }
 
+void
+ChannelAccessManager::GoThroughCS(Ptr<Txop> in_txop)
+{
+  if (!m_cs_enabled) {
+    NS_FATAL_ERROR ("Centralized Scheduler not enabled");
+  }
+  
+  m_centralizedScheduler->EnqueueTransmission(in_txop);
+  if (m_centralizedScheduler->IsTransmitting()) {
+    return;
+  }
+  Ptr<Txop> candidateTxop = m_centralizedScheduler->DequeueTransmission();
+  if (candidateTxop != nullptr) {
+    // WifiMacHeader hdr = candidateTxop->GetWifiMacQueue()->Peek()->GetHeader();
+    // NS_LOG_DEBUG("Access dequeue, trans type: " << hdr.GetTypeString() << ", from=" << hdr.GetAddr2() << ", to=" << hdr.GetAddr1() << ", time: " << Simulator::Now());
+
+    Simulator::ScheduleNow(&Txop::CSRequestAccess, candidateTxop);
+  }
+  return;
+}
+
 bool
 ChannelAccessManager::NeedBackoffUponAccess (Ptr<Txop> txop)
 {
@@ -289,10 +325,29 @@ ChannelAccessManager::NeedBackoffUponAccess (Ptr<Txop> txop)
   return false;
 }
 
+void ChannelAccessManager::RequestAccess (Ptr<Txop> in_txop)
+{
+  if (m_cs_enabled) {
+    GoThroughCS(in_txop);
+  } else {
+    RequestAccessDir(in_txop);
+  }
+}
+
 void
-ChannelAccessManager::RequestAccess (Ptr<Txop> txop)
+ChannelAccessManager::RequestAccessDir (Ptr<Txop> txop)
 {
   NS_LOG_FUNCTION (this << txop);
+
+  if (m_cs_enabled) {
+    if (!txop->HasFramesToTransmit() || txop->GetAccessStatus() != 0) {
+      m_centralizedScheduler->ReleaseLock();
+      return;
+    } else {
+      m_centralizedScheduler->BeginTransmit(txop);
+    }
+  }
+  
   if (m_phy)
     {
       m_phy->NotifyChannelAccessRequested ();
@@ -305,7 +360,12 @@ ChannelAccessManager::RequestAccess (Ptr<Txop> txop)
   /*
    * EDCAF operations shall be performed at slot boundaries (Sec. 10.22.2.4 of 802.11-2016)
    */
-  Time accessGrantStart = GetAccessGrantStart () + (txop->GetAifsn () * GetSlot ());
+  Time accessGrantStart;
+  if (m_cs_enabled) {
+    accessGrantStart = GetAccessGrantStart ();
+  } else {
+    accessGrantStart = GetAccessGrantStart () + (txop->GetAifsn () * GetSlot ());
+  }
 
   if (txop->IsQosTxop () && txop->GetBackoffStart () > accessGrantStart)
     {
@@ -336,30 +396,32 @@ ChannelAccessManager::DoGrantDcfAccess (void)
           && (!txop->IsQosTxop () || !StaticCast<QosTxop> (txop)->EdcaDisabled ())
           && GetBackoffEndFor (txop) <= Simulator::Now () )
         {
-          /**
-           * This is the first Txop we find with an expired backoff and which
-           * needs access to the medium. i.e., it has data to send.
-           */
-          NS_LOG_DEBUG ("dcf " << k << " needs access. backoff expired. access granted. slots=" << txop->GetBackoffSlots ());
-          i++; //go to the next item in the list.
-          k++;
           std::vector<Ptr<Txop> > internalCollisionTxops;
-          for (Txops::iterator j = i; j != m_txops.end (); j++, k++)
-            {
-              Ptr<Txop> otherTxop = *j;
-              if (otherTxop->GetAccessStatus () == Txop::REQUESTED
-                  && GetBackoffEndFor (otherTxop) <= Simulator::Now ())
-                {
-                  NS_LOG_DEBUG ("dcf " << k << " needs access. backoff expired. internal collision. slots=" <<
-                                otherTxop->GetBackoffSlots ());
-                  /**
-                   * all other Txops with a lower priority whose backoff
-                   * has expired and which needed access to the medium
-                   * must be notified that we did get an internal collision.
-                   */
-                  internalCollisionTxops.push_back (otherTxop);
-                }
-            }
+          if (!m_cs_enabled) {
+            /**
+             * This is the first Txop we find with an expired backoff and which
+             * needs access to the medium. i.e., it has data to send.
+             */
+            NS_LOG_DEBUG ("dcf " << k << " needs access. backoff expired. access granted. slots=" << txop->GetBackoffSlots ());
+            i++; //go to the next item in the list.
+            k++;
+            for (Txops::iterator j = i; j != m_txops.end (); j++, k++)
+              {
+                Ptr<Txop> otherTxop = *j;
+                if (otherTxop->GetAccessStatus () == Txop::REQUESTED
+                    && GetBackoffEndFor (otherTxop) <= Simulator::Now ())
+                  {
+                    NS_LOG_DEBUG ("dcf " << k << " needs access. backoff expired. internal collision. slots=" <<
+                                  otherTxop->GetBackoffSlots ());
+                    /**
+                     * all other Txops with a lower priority whose backoff
+                     * has expired and which needed access to the medium
+                     * must be notified that we did get an internal collision.
+                     */
+                    internalCollisionTxops.push_back (otherTxop);
+                  }
+              }
+          }
 
           /**
            * Now, we notify all of these changes in one go if the EDCAF winning
@@ -373,10 +435,12 @@ ChannelAccessManager::DoGrantDcfAccess (void)
 
           if (m_feManager->StartTransmission (txop))
             {
-              for (auto& collidingTxop : internalCollisionTxops)
-                {
-                  m_feManager->NotifyInternalCollision (collidingTxop);
-                }
+              if (!m_cs_enabled) {
+                for (auto& collidingTxop : internalCollisionTxops)
+                  {
+                    m_feManager->NotifyInternalCollision (collidingTxop);
+                  }
+              }
               break;
             }
           else
@@ -391,10 +455,17 @@ ChannelAccessManager::DoGrantDcfAccess (void)
     }
 }
 
+Time
+ChannelAccessManager::GetLastTxDuration(void)
+{
+  return m_lastTxDuration;
+}
+
 void
 ChannelAccessManager::AccessTimeout (void)
 {
   NS_LOG_FUNCTION (this);
+  NS_LOG_DEBUG("Access triggered by AccessTimeout, time: " << Simulator::Now());
   UpdateBackoff ();
   DoGrantDcfAccess ();
   DoRestartAccessTimeoutIfNeeded ();
@@ -404,19 +475,31 @@ Time
 ChannelAccessManager::GetAccessGrantStart (bool ignoreNav) const
 {
   NS_LOG_FUNCTION (this);
+  Time now = Simulator::Now();
   Time lastRxEnd = m_lastRxStart + m_lastRxDuration;
   const Time& sifs = GetSifs();
-  Time rxAccessStart = lastRxEnd + sifs;
+  Time rxAccessStart = lastRxEnd;
   if ((lastRxEnd <= Simulator::Now ()) && !m_lastRxReceivedOk)
     {
       rxAccessStart += GetEifsNoDifs ();
     }
-  Time busyAccessStart = m_lastBusyStart + m_lastBusyDuration + sifs;
-  Time txAccessStart = m_lastTxStart + m_lastTxDuration + sifs;
-  Time navAccessStart = m_lastNavStart + m_lastNavDuration + sifs;
-  Time ackTimeoutAccessStart = m_lastAckTimeoutEnd + sifs;
-  Time ctsTimeoutAccessStart = m_lastCtsTimeoutEnd + sifs;
-  Time switchingAccessStart = m_lastSwitchingStart + m_lastSwitchingDuration + sifs;
+  Time busyAccessStart = m_lastBusyStart + m_lastBusyDuration;
+  Time txAccessStart = m_lastTxStart + m_lastTxDuration;
+  Time navAccessStart = m_lastNavStart + m_lastNavDuration;
+  Time ackTimeoutAccessStart = m_lastAckTimeoutEnd;
+  Time ctsTimeoutAccessStart = m_lastCtsTimeoutEnd;
+  Time switchingAccessStart = m_lastSwitchingStart + m_lastSwitchingDuration;
+
+  if (!m_cs_enabled) {
+    rxAccessStart += sifs;
+    busyAccessStart += sifs;
+    txAccessStart += sifs;
+    navAccessStart += sifs;
+    ackTimeoutAccessStart += sifs;
+    ctsTimeoutAccessStart += sifs;
+    switchingAccessStart += sifs;
+  }
+
   Time accessGrantedStart;
   if (ignoreNav)
     {
@@ -443,7 +526,8 @@ ChannelAccessManager::GetAccessGrantStart (bool ignoreNav) const
                ", rx access start=" << rxAccessStart <<
                ", busy access start=" << busyAccessStart <<
                ", tx access start=" << txAccessStart <<
-               ", nav access start=" << navAccessStart);
+               ", nav access start=" << navAccessStart << 
+               ", Now: " << Simulator::Now());
   return accessGrantedStart;
 }
 
@@ -451,8 +535,14 @@ Time
 ChannelAccessManager::GetBackoffStartFor (Ptr<Txop> txop)
 {
   NS_LOG_FUNCTION (this << txop);
-  Time mostRecentEvent = MostRecent ({txop->GetBackoffStart (),
-                                     GetAccessGrantStart () + (txop->GetAifsn () * GetSlot ())});
+  Time mostRecentEvent;
+  if (m_cs_enabled) {
+    mostRecentEvent = MostRecent ({txop->GetBackoffStart(), GetAccessGrantStart()});
+  } else {
+    mostRecentEvent = MostRecent ({txop->GetBackoffStart (),
+                                  GetAccessGrantStart () + (txop->GetAifsn () * GetSlot ())});
+  }
+
   NS_LOG_DEBUG ("Backoff start: " << mostRecentEvent.As (Time::US));
 
   return mostRecentEvent;
@@ -463,7 +553,7 @@ ChannelAccessManager::GetBackoffEndFor (Ptr<Txop> txop)
 {
   NS_LOG_FUNCTION (this << txop);
   Time backoffEnd = GetBackoffStartFor (txop) + (txop->GetBackoffSlots () * GetSlot ());
-  NS_LOG_DEBUG ("Backoff end: " << backoffEnd.As (Time::US));
+  NS_LOG_DEBUG ("Backoff end: " << backoffEnd.As (Time::US) << ", backoff slots: " << txop->GetBackoffSlots ());
 
   return backoffEnd;
 }
@@ -792,7 +882,9 @@ void
 ChannelAccessManager::NotifyAckTimeoutStartNow (Time duration)
 {
   NS_LOG_FUNCTION (this << duration);
-  NS_ASSERT (m_lastAckTimeoutEnd < Simulator::Now ());
+  if (!m_cs_enabled) {
+    NS_ASSERT (m_lastAckTimeoutEnd < Simulator::Now ());
+  }
   m_lastAckTimeoutEnd = Simulator::Now () + duration;
 }
 
