@@ -382,7 +382,6 @@ FtmSession::SessionBegin (void)
       action.publicAction = WifiActionHeader::FTM_REQUEST;
       hdr.SetAction(WifiActionHeader::PUBLIC_ACTION, action);
       packet->AddHeader(hdr);
-      // Simulator::Schedule(MilliSeconds(m_ftm_params.GetBurstPeriod() * 100 + 500), &FtmSession::StartOverSessionIfNoResponse, this);
     }
   else if (m_session_type == FTM_RESPONDER)
     {

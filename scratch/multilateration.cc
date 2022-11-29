@@ -261,6 +261,7 @@ main(int argc, char *argv[])
 
 	// size_t staPerAP = 10;
 	int bps = 2;
+  
 	for (size_t staPerAP=12; staPerAP<13; staPerAP+=1) {
 		std::cout << "# STA: " << staPerAP*3 << ", With CS " << std::endl;
 		std::vector<std::tuple<double, double, double, double, double>> resultsList;
