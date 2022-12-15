@@ -75,7 +75,6 @@ FtmSession::FtmSession ()
 
 FtmSession::~FtmSession ()
 {
-  m_ftm_error_model = 0;
   m_rtt_list.clear();
   m_ftm_dialogs.clear();
   m_current_dialog = 0;
@@ -700,11 +699,18 @@ FtmSession::GetMeanRTT (void)
   for(int64_t curr : m_rtt_list)
     {
       if (curr*pow(10, -12)*299792458/2 > 1000 or curr*pow(10, -12)*299792458/2 < 0) {
+        NS_LOG_DEBUG("RTT out of range, in session: " << std::get<0>(m_session_belonging) <<
+                     ", " << std::get<1>(m_session_belonging) << ", range: " << curr*pow(10, -12)*299792458/2);
         size -= 1;
         continue;
       }
       avg_rtt += curr;
     }
+
+  if (size == 0) {
+    return 0;
+  }
+
   avg_rtt /= size;
   return avg_rtt;
 }

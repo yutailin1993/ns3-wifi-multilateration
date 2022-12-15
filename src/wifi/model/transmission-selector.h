@@ -41,12 +41,9 @@ public:
 	std::vector<Mac48Address> GetCandidateAddrs();
 	void ResetCandidateAddrs();
 	void RegisterDevice(int in_deviceNo, Mac48Address in_deviceAddr);
-	void ReleaseLock();
-	bool GetLock();
 
 private:
 	int GetIndexByAddr(Mac48Address in_addr);
-	int m_lock;
 
 	std::map<const int, Mac48Address> m_nodeAddrTable;
 	std::vector<Mac48Address> m_candidateAddrs; // idx 0 is To Addr, idx 1 is From Addr

@@ -24,7 +24,7 @@ import locale
 import scipy.stats as st
 
 default_filename = "FTM_Wireless_Error.map"
-default_bias = 10000
+default_bias = 22000
 default_dcorr = 0.25
 default_resolution = 0.01
 

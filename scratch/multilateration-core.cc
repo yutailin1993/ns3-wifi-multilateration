@@ -47,6 +47,9 @@ SessionOver(FtmSession in_session)
 	// std::cout << "AP: " << apIdx << ", STA: " << staIdx << ", Successful FTM Count: " << in_session.GetIndividualRTT().size() << ", Distance: " << distance << std::endl;
 	std::map<uint8_t, Ptr<FtmSession::FtmDialog>> dialogs = in_session.GetFtmDialogs();
 
+	std::list<int64_t> theList = in_session.GetIndividualRTT();
+
+	SessionRTTs.push_back({apIdx, staIdx, theList});
 	DialogsCntList.push_back(dialogs.size());
 }
 
@@ -78,22 +81,22 @@ WifiEnvironment::CreateNodes()
 }
 
 void
-WifiEnvironment::SetupDevicePhy(int64_t in_seed)
+WifiEnvironment::SetupDevicePhy(int64_t in_seed, std::string in_strChannelSettings)
 {
 	m_wifi.SetStandard(standard);
 	std::ostringstream oss;
-	oss << "HeMcs" << m_mcs;
+	oss << "HtMcs" << m_mcs;
 
 	// m_yansWifiPhy.Set("RxGain", DoubleValue(0));
 	m_yansWifiPhy.SetPcapDataLinkType(WifiPhyHelper::DLT_IEEE802_11_RADIO);
 
 	m_yansWifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
-	m_yansWifiChannel.AddPropagationLoss("ns3::FixedRssLossModel", "Rss", DoubleValue(rss));
-	// m_yansWifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel", "Frequency", DoubleValue (5e9));
+	// m_yansWifiChannel.AddPropagationLoss("ns3::FixedRssLossModel", "Rss", DoubleValue(rss));
+	m_yansWifiChannel.AddPropagationLoss("ns3::FriisPropagationLossModel", "Frequency", DoubleValue (5e9));
 
 	m_yansWifiPhy.SetChannel(m_yansWifiChannel.Create());
 
-	m_yansWifiPhy.Set("ChannelSettings", StringValue (strChannelSettings));
+	m_yansWifiPhy.Set("ChannelSettings", StringValue (in_strChannelSettings));
 
 	m_wifi.SetRemoteStationManager("ns3::IdealWifiManager");
 	// m_wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
@@ -294,9 +297,6 @@ WifiEnvironment::GetDevice(DeviceType in_deviceType, int in_deviceNo)
 /* Multilateration class implementation */
 Multilateration::~Multilateration()
 {
-	if (m_ftmMap != NULL) {
-		m_ftmMap->~FtmMap();
-	}
 	m_ftmParams.~FtmParams();
 	ApStaDistList.clear();
 	DialogsCntList.clear();
@@ -396,7 +396,7 @@ Ptr<WirelessFtmErrorModel::FtmMap>
 Multilateration::LoadWirelessErrorMap()
 {
 	Ptr<WirelessFtmErrorModel::FtmMap> ftmMap = CreateObject<WirelessFtmErrorModel::FtmMap> ();
-	ftmMap->LoadMap("./src/wifi/ftm_map/20x20.map");
+	ftmMap->LoadMap("./src/wifi/ftm_map/50x50.map");
 
 	return ftmMap;
 }
@@ -412,12 +412,12 @@ Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
 	m_ftmParams.SetStatusIndication(FtmParams::RESERVED);
 	m_ftmParams.SetStatusIndicationValue(0);
 	m_ftmParams.SetNumberOfBurstsExponent(burstExponent);
-	m_ftmParams.SetBurstDuration(10);
+	m_ftmParams.SetBurstDuration(11);
 
 	m_ftmParams.SetMinDeltaFtm(10);
 	m_ftmParams.SetPartialTsfNoPref(true);
 	m_ftmParams.SetAsap(true);
-	m_ftmParams.SetFtmsPerBurst(5);
+	m_ftmParams.SetFtmsPerBurst(10);
 	m_ftmParams.SetBurstPeriod((numOfMiniSec/in_nBurstsPerSecond));
 }
 

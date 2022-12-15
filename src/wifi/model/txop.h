@@ -28,6 +28,7 @@ namespace ns3 {
 
 class Packet;
 class ChannelAccessManager;
+class CentralizedScheduler;
 class MacTxMiddle;
 class WifiMode;
 class WifiMacQueue;
@@ -277,6 +278,7 @@ public:
 protected:
   ///< ChannelAccessManager associated class
   friend class ChannelAccessManager;
+  friend class CentralizedScheduler;
 
   void DoDispose (void) override;
   void DoInitialize (void) override;

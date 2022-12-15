@@ -33,7 +33,6 @@ NS_OBJECT_ENSURE_REGISTERED (TransmissionSelector);
 
 TransmissionSelector::TransmissionSelector()
 {
-	m_lock = 0;
 	m_candidateAddrs.clear();
 }
 
@@ -54,27 +53,10 @@ TransmissionSelector::ResetCandidateAddrs()
 	m_candidateAddrs.clear();
 }
 
-bool
-TransmissionSelector::GetLock()
-{
-	if (m_lock == 0) {
-		m_lock++;
-		return true;
-	} else {
-		return false;
-	}
-}
-
 void
 TransmissionSelector::RegisterDevice(int in_deviceNo, Mac48Address in_deviceAddr)
 {
 	m_nodeAddrTable.insert(std::pair<const int, Mac48Address> (in_deviceNo, in_deviceAddr));
-}
-
-void
-TransmissionSelector::ReleaseLock()
-{
-	m_lock = 0;
 }
 
 void

@@ -49,7 +49,7 @@ typedef std::vector<std::tuple<size_t, size_t, double>> DistList;
 
 inline DistList ApStaDistList;
 inline std::vector<int> DialogsCntList;
-inline std::string strChannelSettings = "{0, " + std::to_string(80) + ", BAND_5GHZ, 0}";
+inline std::vector<std::tuple<size_t, size_t, std::list<int64_t>>> SessionRTTs;
 
 enum EModel {
 	NO_ERROR,
@@ -94,7 +94,7 @@ class WifiEnvironment
 		virtual ~WifiEnvironment();
 
 		void CreateNodes();
-		void SetupDevicePhy(int64_t in_seed);
+		void SetupDevicePhy(int64_t in_seed, std::string in_strChannelSettings);
 		void SetRTSCTS(bool in_enableRTSCTS);
 		void SetupMobility();
 		void ConstructDeviceLists();
@@ -157,7 +157,7 @@ class Multilateration
 		Multilateration(EModel e, int channelWidth) {
 			m_errorModel = e;
 			m_channelWidth = channelWidth;
-			// m_ftmMap = LoadWirelessErrorMap();
+			m_ftmMap = LoadWirelessErrorMap();
 		};
 
 		virtual ~Multilateration();

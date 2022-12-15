@@ -113,6 +113,33 @@ CalculatePosDiff(Position in_staGroundTruthPos, Position in_staEstimatePos)
 	return err_dist;
 }
 
+std::list<double>
+GetAvgDistDiff(int in_apIdx, int in_staIdx, Position in_apPositions, Position in_staGroundTruthPos)
+{
+	double x_dist = std::get<0>(in_apPositions) - std::get<0>(in_staGroundTruthPos);
+	double y_dist = std::get<1>(in_apPositions) - std::get<1>(in_staGroundTruthPos);
+	double dist = sqrt(pow(x_dist, 2) + pow(y_dist, 2));
+
+	auto distTpl = std::find_if(SessionRTTs.begin(), SessionRTTs.end(),
+															[in_apIdx, in_staIdx](const std::tuple<size_t, size_t, std::list<int64_t>>& e)
+															{return (std::get<0> (e) == in_apIdx && std::get<1>(e) == in_staIdx);}
+															);
+
+	std::list<int64_t> distList = std::get<2>(*distTpl);
+
+	std::list<double> diffList;
+
+	for (int64_t x : distList) {
+		if (x*pow(10, -12)*299792458/2 > 1000 or x*pow(10, -12)*299792458/2 < 0) {
+			continue;
+		}
+		double diff = (x*pow(10, -12)*299792458/2) - dist;
+		diffList.push_back(diff);
+		}
+
+	return diffList;
+}
+
 double
 GetThroughput(ApplicationContainer in_serverApp, uint32_t in_payloadSize, double in_simulationTime)
 {
@@ -171,12 +198,13 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 																						in_udpConfig.udpInterval);
 	Multilateration positioning = Multilateration(in_e, in_envConf.channelWidth);
 
+	std::string strChannelSettings = "{0, " + std::to_string(in_envConf.channelWidth) + ", BAND_5GHZ, 0}";
 
 	wifiEnv.CreateNodes();
-	wifiEnv.SetupDevicePhy(in_seed);
+	wifiEnv.SetupDevicePhy(in_seed, strChannelSettings);
 	wifiEnv.SetupMobility();
 	wifiEnv.ConstructDeviceLists();
-	wifiEnv.SetupCentralizedScheduler(0.1, MilliSeconds(1000/in_nBursts), TransmissionType::FTM);
+	wifiEnv.SetupCentralizedScheduler(0.7, MilliSeconds(1000/in_nBursts), TransmissionType::FTM);
 	
 	wifiEnv.SetupApplication();
 
@@ -193,7 +221,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	}
 	
 	Simulator::Schedule (Seconds (0.0), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
-	Simulator::Stop(Seconds (in_simulationTime+2));
+	Simulator::Stop(Seconds (in_simulationTime+1));
 	Simulator::Run();
 	
 	ApplicationContainer serverApp = wifiEnv.GetServerApps();
@@ -227,12 +255,27 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 		ftmDiaglossRate += double(in_nBursts * 10 * in_simulationTime - DialogsCntList[i]) / double(in_nBursts * 10 * in_simulationTime);
 	}
 
+	// for (int i=0; i<in_envConf.nAPs; i++) {
+	// 	for (int j=0; j<in_envConf.nSTAs; j++) {
+	// 		std::list<double> diffList = GetAvgDistDiff(i, j, apPosList[i], staGroundTruthPosList[j]);
+
+	// 		double avgDiff = 0;
+	// 		int size = diffList.size();
+
+	// 		for (double diff : diffList) {
+	// 			avgDiff += diff;
+	// 		}
+
+	// 		std::cout << fabs(avgDiff / size) << "," << std::endl;
+	// 	}
+	// }
+
 	return {
 		appThroughput,
 		avgAppThroughput,
 		totalErr/in_envConf.nSTAs,
 		packetLossRate,
-		ftmDiaglossRate
+		ftmDiaglossRate/totalSessionsNum
 		};
 }
 
@@ -254,7 +297,7 @@ main(int argc, char *argv[])
 	// LogComponentEnable("VhtFrameExchangeManager", LOG_LEVEL_DEBUG);
 	// LogComponentEnable("FtmSession", LOG_LEVEL_ALL);
 
-	const double simulationTime = 9.0;
+	const double simulationTime = 2.0;
 
 	
 	std::cout << "begin simulation" << std::endl;
@@ -262,7 +305,7 @@ main(int argc, char *argv[])
 	// size_t staPerAP = 10;
 	int bps = 2;
   
-	for (size_t staPerAP=12; staPerAP<13; staPerAP+=1) {
+	for (size_t staPerAP=35; staPerAP<36; staPerAP+=2) {
 		std::cout << "# STA: " << staPerAP*3 << ", With CS " << std::endl;
 		std::vector<std::tuple<double, double, double, double, double>> resultsList;
 		
@@ -277,9 +320,9 @@ main(int argc, char *argv[])
 			"0.0012" // udpInterval
 		};
 
-		for (int simNum=1; simNum<11; simNum++) {
+		for (int simNum=10; simNum<12; simNum++) {
 			std::cout << "Simulation: " << simNum << std::endl;
-			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRED_ERROR, envConf, udpConf, simulationTime));
+			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRELESS_ERROR, envConf, udpConf, simulationTime));
 			
 			std::cout << "PacketLossRate" << std::endl;
 			for (auto &tupItr : resultsList) {
@@ -304,27 +347,6 @@ main(int argc, char *argv[])
 			}
 		}
 
-		std::cout << "PacketLossRate" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<3>(tupItr) << "," << std::endl;
-		}
-		std::cout << "FtmDialogLossRate" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<4>(tupItr) << "," << std::endl;
-		}
-		
-		std::cout << "TotalThroughput" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<0>(tupItr) << "," << std::endl;
-		}
-		std::cout << "AvgThroughput" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<1>(tupItr) << "," << std::endl;
-		}
-		std::cout << "DistErr" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<2>(tupItr) << "," << std::endl;
-		}
 	}
 	
 

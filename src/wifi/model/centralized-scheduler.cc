@@ -199,10 +199,13 @@ CentralizedScheduler::ReleaseLock()
 bool
 CentralizedScheduler::GetLock()
 {
+	NS_LOG_DEBUG("m_lock value: " << m_lock << ", function belonging: " << this << ", time: " << Simulator::Now());
 	if (m_lock == 0) {
 		m_lock++;
+		NS_LOG_DEBUG("Got lock, m_lock value: " << m_lock << ", function belonging: " << this << ", time: " << Simulator::Now());
 		return true;
 	} else {
+		NS_LOG_DEBUG("Couldn't get lock, m_lock value: " << m_lock << ", function belonging: " << this << ", time: " << Simulator::Now());
 		return false;
 	}
 }
@@ -276,31 +279,37 @@ CentralizedScheduler::DequeueTransmission()
 		return nullptr;
 	}
 
-	Ptr<Txop> candidateTxop;
-	if (!m_broadcastQueue.empty()) {
-		candidateTxop = m_broadcastQueue.front();
-		m_broadcastQueue.pop();
-	} else if (!m_mgtOtherQueue.empty()) {
-		candidateTxop = m_mgtOtherQueue.front();
-		m_mgtOtherQueue.pop();
-	} else if (m_currTransType == TransmissionType::DATA && !m_dataTxopQueue.empty()) {
-		candidateTxop = m_dataTxopQueue.front();
-		m_dataTxopQueue.pop();
-	} else if (m_currTransType == TransmissionType::FTM && !m_ftmTxopQueue.empty()) {
-		candidateTxop = m_ftmTxopQueue.front();
-		m_ftmTxopQueue.pop();
-	} else {
-		NS_LOG_DEBUG("Centralized Scheduler queue empty.");
-		ReleaseLock();
-		return nullptr;
-	}
+	Ptr<Txop> candidateTxop = nullptr;
+	int flag = 0;
 
-	Ptr<WifiMacQueue> macQueue = candidateTxop->GetWifiMacQueue();
-	
-	if (macQueue->IsEmpty()) {
-		ReleaseLock();
-		return nullptr;
+	while (flag == 0) {
+		if (!m_broadcastQueue.empty()) {
+			candidateTxop = m_broadcastQueue.front();
+			m_broadcastQueue.pop();
+		} else if (!m_mgtOtherQueue.empty()) {
+			candidateTxop = m_mgtOtherQueue.front();
+			m_mgtOtherQueue.pop();
+		} else if (m_currTransType == TransmissionType::DATA && !m_dataTxopQueue.empty()) {
+			candidateTxop = m_dataTxopQueue.front();
+			m_dataTxopQueue.pop();
+		} else if (m_currTransType == TransmissionType::FTM && !m_ftmTxopQueue.empty()) {
+			candidateTxop = m_ftmTxopQueue.front();
+			m_ftmTxopQueue.pop();
+		} else {
+			NS_LOG_DEBUG("Centralized Scheduler queue empty.");
+			ReleaseLock();
+			return nullptr;
+		}
+
+		flag = 1;
+
+		if (!candidateTxop->HasFramesToTransmit()) {
+			flag = 0;
+		}
 	}
+	
+	
+	Ptr<WifiMacQueue> macQueue = candidateTxop->GetWifiMacQueue();
 
 	WifiMacHeader hdr = macQueue->Peek()->GetItem()->GetHeader();
 	Ptr<const Packet> packet = macQueue->Peek()->GetItem()->GetPacket();

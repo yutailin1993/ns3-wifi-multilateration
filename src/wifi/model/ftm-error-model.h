@@ -147,9 +147,9 @@ protected:
 
   double m_mean = 0; //!< mean currently used
   double m_standard_deviation = 0; //!< standard deviation currently used
-  const double m_standard_deviation_20MHz = 2562.69; //!< value for 20MHz channel bandwidth
-  const double m_standard_deviation_40MHz = 1074.91; //!< value for 40MHz channel bandwidth
-  const double m_standard_deviation_80MHz = 577.62; //!< temp value for 80MHz channel bandwidth
+  const double m_standard_deviation_20MHz = 14567.69; //!< value for 20MHz channel bandwidth
+  const double m_standard_deviation_40MHz = 10006.46; //!< value for 40MHz channel bandwidth
+  const double m_standard_deviation_80MHz = 6376.62; //!< temp value for 80MHz channel bandwidth
 
   /**
    * Updates the distribution when mean or standard deviation changes.
