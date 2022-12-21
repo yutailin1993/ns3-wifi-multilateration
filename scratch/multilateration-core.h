@@ -162,7 +162,7 @@ class Multilateration
 
 		virtual ~Multilateration();
 
-		void SetFTMParams(int in_nBursts, double in_simulationTime);
+		void SetFTMParams(int in_nBursts, double in_simulationTime, int in_nSTAs, double in_alpha);
 		void ConstructAllSessions(EnvConfig in_envConf, WifiNetDevicesList in_APs, WifiNetDevicesList in_STAs, AddressList in_recvAddrs);
 		void EndAllSessions();
 

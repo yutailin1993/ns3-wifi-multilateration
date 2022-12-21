@@ -141,7 +141,7 @@ WiredFtmErrorModel::SetChannelBandwidth (ChannelBandwidth bandwidth)
     case Channel_160_MHz:
       return;
   }
-  m_mean = 0;
+  m_mean = 10006.92;
   UpdateDistribution ();
 }
 

@@ -40,7 +40,13 @@ SessionOver(FtmSession in_session)
 	std::tuple<size_t, size_t> connectionPair = in_session.GetSessionBelonging();
 	size_t apIdx = std::get<0>(connectionPair);
 	size_t staIdx = std::get<1>(connectionPair);
-	double distance = in_session.GetMeanRTT()*pow(10, -12)*299792458/2;
+	double distance = 0;
+	
+	if (in_session.GetMeanRTT() == -1) {
+		distance = -1;
+	} else {
+		distance = in_session.GetMeanRTT()*pow(10, -12)*299792458/2;
+	}
 
 	ApStaDistList.push_back({apIdx, staIdx, distance});
 
@@ -85,7 +91,7 @@ WifiEnvironment::SetupDevicePhy(int64_t in_seed, std::string in_strChannelSettin
 {
 	m_wifi.SetStandard(standard);
 	std::ostringstream oss;
-	oss << "HtMcs" << m_mcs;
+	oss << "HeMcs" << m_mcs;
 
 	// m_yansWifiPhy.Set("RxGain", DoubleValue(0));
 	m_yansWifiPhy.SetPcapDataLinkType(WifiPhyHelper::DLT_IEEE802_11_RADIO);
@@ -402,12 +408,16 @@ Multilateration::LoadWirelessErrorMap()
 }
 
 void
-Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
+Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime, int in_nSTAs, double in_alpha)
 {
 	const uint16_t numOfMiniSec = 10; // 1 sec
-	int totalBursts = int (in_nBurstsPerSecond*(in_simulationTime-1));
+	int totalBursts = int (in_nBurstsPerSecond*ceil(in_simulationTime-1));
 	// int totalBursts = 54;
 	int burstExponent = int (log2(totalBursts));
+
+	int ftmPerBurst = std::max(1, int (floor(500 * in_alpha / (0.4 * in_nSTAs))) - 1);
+
+	std::cout << "FTM per burst: " << ftmPerBurst << std::endl;
 
 	m_ftmParams.SetStatusIndication(FtmParams::RESERVED);
 	m_ftmParams.SetStatusIndicationValue(0);
@@ -417,7 +427,7 @@ Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime)
 	m_ftmParams.SetMinDeltaFtm(10);
 	m_ftmParams.SetPartialTsfNoPref(true);
 	m_ftmParams.SetAsap(true);
-	m_ftmParams.SetFtmsPerBurst(10);
+	m_ftmParams.SetFtmsPerBurst(ftmPerBurst);
 	m_ftmParams.SetBurstPeriod((numOfMiniSec/in_nBurstsPerSecond));
 }
 

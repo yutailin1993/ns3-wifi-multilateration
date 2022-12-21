@@ -147,7 +147,7 @@ def generateMap(args):
 		#z = np.random.normal(loc=heavy_multipath_mean, scale=heavy_multipath_sd, size=xx.shape)
 		z = st.exponnorm.rvs(1.9422496573694217, -1.6435585024441102, 0.8462059922427465, size=xx.shape) * 100 / 0.03
 	else:
-		z = np.random.rand(xx.shape[0], xx.shape[1]) * bias - bias/2
+		z = np.random.rand(xx.shape[0], xx.shape[1]) * bias + bias/2
 
 	f = interpolate.interp2d(x, y, z, kind='cubic')
 

@@ -97,6 +97,10 @@ CalculatePosition(size_t in_staIdx, EnvConfig in_envConf, PositionList in_apPosL
 														{return (std::get<0>(e) == i && std::get<1>(e) == in_staIdx);}
 														);
 		distArray[i] = std::get<2>(*distTpl);
+
+		if (distArray[i] == -1) {
+			return {-1000, -1000, 0};
+		}
 	}
 
 	/* Calculate Distance */
@@ -179,10 +183,12 @@ RunSession(Ptr<FtmSession> in_session)
 	in_session->SessionBegin();
 }
 
-std::tuple<double, double, double, double, double>
+std::tuple<double, double, double, double, double, int>
 RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_envConf, UdpConfig in_udpConfig, double in_simulationTime)
 {
 	// PositionList staPosList(glob_staPosList.begin(), glob_staPosList.begin()+in_envConf.nSTAs);
+
+	double alpha = 0.1;
 
 	RngSeedManager::SetSeed(in_seed);
 	RngSeedManager::SetRun(in_seed);
@@ -204,7 +210,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	wifiEnv.SetupDevicePhy(in_seed, strChannelSettings);
 	wifiEnv.SetupMobility();
 	wifiEnv.ConstructDeviceLists();
-	wifiEnv.SetupCentralizedScheduler(0.7, MilliSeconds(1000/in_nBursts), TransmissionType::FTM);
+	wifiEnv.SetupCentralizedScheduler(alpha, MilliSeconds(1000/in_nBursts), TransmissionType::FTM);
 	
 	wifiEnv.SetupApplication();
 
@@ -212,7 +218,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	WifiNetDevicesList wifiSTAlist = wifiEnv.GetWifiSTAs();
 	AddressList apAddrList = wifiEnv.GetRecvAddress();
 
-	positioning.SetFTMParams(in_nBursts, in_simulationTime);
+	positioning.SetFTMParams(in_nBursts, in_simulationTime, in_envConf.nSTAs, alpha);
 	positioning.ConstructAllSessions(in_envConf, wifiAPlist, wifiSTAlist, apAddrList);
 	SessionList allSessions = positioning.GetAllSessions();
 
@@ -221,7 +227,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	}
 	
 	Simulator::Schedule (Seconds (0.0), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
-	Simulator::Stop(Seconds (in_simulationTime+1));
+	Simulator::Stop(Seconds (in_simulationTime));
 	Simulator::Run();
 	
 	ApplicationContainer serverApp = wifiEnv.GetServerApps();
@@ -245,8 +251,15 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	// std::cout << avgAppThroughput << "," << std::endl;
 
 	double totalErr = 0.0;
+	int lossSTACount = 0;
 	for (int i=0; i<in_envConf.nSTAs; i++) {
-		totalErr += CalculatePosDiff(staGroundTruthPosList[i], CalculatePosition(i, in_envConf, apPosList));
+		Position estimatedPos = CalculatePosition(i, in_envConf, apPosList);
+
+		if (std::get<0>(estimatedPos) == -1000 && std::get<1>(estimatedPos) == -1000) {
+			lossSTACount += 1;
+			continue;
+		}
+		totalErr += CalculatePosDiff(staGroundTruthPosList[i], estimatedPos);
 	}
 
 	double ftmDiaglossRate = 0.0;
@@ -273,9 +286,10 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	return {
 		appThroughput,
 		avgAppThroughput,
-		totalErr/in_envConf.nSTAs,
+		totalErr/(in_envConf.nSTAs - lossSTACount),
 		packetLossRate,
-		ftmDiaglossRate/totalSessionsNum
+		ftmDiaglossRate/totalSessionsNum,
+		lossSTACount
 		};
 }
 
@@ -295,9 +309,9 @@ main(int argc, char *argv[])
 	// LogComponentEnable("QosFrameExchangeManager", LOG_LEVEL_DEBUG);
 	// LogComponentEnable("HtFrameExchangeManager", LOG_LEVEL_DEBUG);
 	// LogComponentEnable("VhtFrameExchangeManager", LOG_LEVEL_DEBUG);
-	// LogComponentEnable("FtmSession", LOG_LEVEL_ALL);
+	// LogComponentEnable("FtmSession", LOG_LEVEL_ERROR);
 
-	const double simulationTime = 2.0;
+	const double simulationTime = 1.5;
 
 	
 	std::cout << "begin simulation" << std::endl;
@@ -305,9 +319,9 @@ main(int argc, char *argv[])
 	// size_t staPerAP = 10;
 	int bps = 2;
   
-	for (size_t staPerAP=35; staPerAP<36; staPerAP+=2) {
+	for (size_t staPerAP=10; staPerAP<60; staPerAP+=10) {
 		std::cout << "# STA: " << staPerAP*3 << ", With CS " << std::endl;
-		std::vector<std::tuple<double, double, double, double, double>> resultsList;
+		std::vector<std::tuple<double, double, double, double, double, int>> resultsList;
 		
 		EnvConfig envConf = {
 			3, // nAPs
@@ -320,31 +334,36 @@ main(int argc, char *argv[])
 			"0.0012" // udpInterval
 		};
 
-		for (int simNum=10; simNum<12; simNum++) {
+		for (int simNum=1; simNum<11; simNum++) {
 			std::cout << "Simulation: " << simNum << std::endl;
 			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRELESS_ERROR, envConf, udpConf, simulationTime));
-			
-			std::cout << "PacketLossRate" << std::endl;
-			for (auto &tupItr : resultsList) {
-				std::cout << std::get<3>(tupItr) << "," << std::endl;
-			}
-			std::cout << "FtmDialogLossRate" << std::endl;
-			for (auto &tupItr : resultsList) {
-				std::cout << std::get<4>(tupItr) << "," << std::endl;
-			}
+		}
+
+		std::cout << "PacketLossRate" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<3>(tupItr) << "," << std::endl;
+		}
+		std::cout << "FtmDialogLossRate" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<4>(tupItr) << "," << std::endl;
+		}
 		
-			std::cout << "TotalThroughput" << std::endl;
-			for (auto &tupItr : resultsList) {
-				std::cout << std::get<0>(tupItr) << "," << std::endl;
-			}
-			std::cout << "AvgThroughput" << std::endl;
-			for (auto &tupItr : resultsList) {
-				std::cout << std::get<1>(tupItr) << "," << std::endl;
-			}
-			std::cout << "DistErr" << std::endl;
-			for (auto &tupItr : resultsList) {
-				std::cout << std::get<2>(tupItr) << "," << std::endl;
-			}
+		std::cout << "TotalThroughput" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<0>(tupItr) << "," << std::endl;
+		}
+		std::cout << "AvgThroughput" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<1>(tupItr) << "," << std::endl;
+		}
+		std::cout << "DistErr" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<2>(tupItr) << "," << std::endl;
+		}
+
+		std::cout << "Loss STA count" << std::endl;
+		for (auto &tupItr : resultsList) {
+			std::cout << std::get<5>(tupItr) << "," << std::endl; 
 		}
 
 	}

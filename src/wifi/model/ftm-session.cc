@@ -692,7 +692,7 @@ FtmSession::GetMeanRTT (void)
 {
   if (m_rtt_list.size () == 0)
     {
-      return 0;
+      return -1;
     }
   int64_t avg_rtt = 0;
   int32_t size = m_rtt_list.size();
@@ -708,7 +708,7 @@ FtmSession::GetMeanRTT (void)
     }
 
   if (size == 0) {
-    return 0;
+    return -1;
   }
 
   avg_rtt /= size;
