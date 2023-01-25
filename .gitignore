@@ -10,3 +10,5 @@
 /cmake-cache/
 /.lock-ns3_darwin_build
 /experiments\ results/
+.ipynb_checkpoints/
+__pycache__/graph.cpython-310.pyc
