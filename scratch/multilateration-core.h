@@ -22,6 +22,7 @@
 
 #include <vector>
 #include <tuple>
+#include <set>
 #include <string>
 
 using namespace ns3;
@@ -47,7 +48,8 @@ typedef std::vector<std::tuple<size_t, size_t, double>> DistList;
 
 /* variable definitation */
 
-inline DistList ApStaDistList;
+inline DistList activeDistList;
+inline DistList passiveDistList;
 inline std::vector<int> DialogsCntList;
 inline std::vector<std::tuple<size_t, size_t, std::list<int64_t>>> SessionRTTs;
 
@@ -99,12 +101,16 @@ class WifiEnvironment
 		void SetupMobility();
 		void ConstructDeviceLists();
 		void SetupApplication();
-		void SetupCentralizedScheduler(double in_alpha, Time in_periodLength, TransmissionType in_transType);
+		void SetupCentralizedScheduler(double in_alpha,
+																	 Time in_periodLength,
+																	 TransmissionType in_transType,
+																	 std::vector<std::vector<int>> in_independentSets);
 
 		WifiNetDevicesList GetWifiAPs();
 		WifiNetDevicesList GetWifiSTAs();
 		NodeContainer GetWifiNodes();
-		AddressList GetRecvAddress();
+		AddressList GetApAddress();
+		AddressList GetStaAddress();
 		PositionList GetStaPositions();
 		PositionList GetApPositions();
 
@@ -163,7 +169,10 @@ class Multilateration
 		virtual ~Multilateration();
 
 		void SetFTMParams(int in_nBursts, double in_simulationTime, int in_nSTAs, double in_alpha);
-		void ConstructAllSessions(EnvConfig in_envConf, WifiNetDevicesList in_APs, WifiNetDevicesList in_STAs, AddressList in_recvAddrs);
+		void ConstructIfSessions(std::vector<int> in_anchorSTAs, WifiNetDevicesList in_APs, WifiNetDevicesList in_STAs, AddressList in_apAddrs);
+		void ConstructPassiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_staAddrs);
+		void ConstructActiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_staAddrs, std::set<std::vector<int>> in_activeLinks);
+		void ConstructPeerDistance(EnvConfig in_envConf, WifiNetDevicesList in_STAs, PositionList in_posList, AddressList in_staAddrs);
 		void EndAllSessions();
 
 		SessionList GetAllSessions();
@@ -175,6 +184,7 @@ class Multilateration
 		FtmParams m_ftmParams;
 		Ptr<WiredFtmErrorModel> m_wiredErrorModel;
 		SessionList m_sessionList;
+		SessionList m_passiveSessionList;
 		Ptr<WirelessFtmErrorModel::FtmMap> m_ftmMap;
 
 		Ptr<WiredFtmErrorModel> GenerateWiredErrorModel();
@@ -182,4 +192,7 @@ class Multilateration
 		WiredFtmErrorModel::ChannelBandwidth GetErrorModel();
 		Ptr<WirelessFtmErrorModel::FtmMap> LoadWirelessErrorMap();
 		Ptr<FtmSession> GenerateFTMSession(std::tuple<size_t, size_t> in_connection_Pair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr);
+		Ptr<FtmSession> GeneratePassiveFTMSession(std::tuple<size_t, size_t> in_connection_Pair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr);
+		std::map<int, double> ComputeDistance(size_t in_nodeIdx, int in_nSTAs, PositionList in_posLists);
+		double DistanceCalculate(double x1, double y1, double x2, double y2);
 };

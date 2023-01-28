@@ -258,13 +258,8 @@ ChannelAccessManager::GoThroughCS(Ptr<Txop> in_txop)
   if (m_centralizedScheduler->IsTransmitting()) {
     return;
   }
-  Ptr<Txop> candidateTxop = m_centralizedScheduler->DequeueTransmission();
-  if (candidateTxop != nullptr) {
-    // WifiMacHeader hdr = candidateTxop->GetWifiMacQueue()->Peek()->GetHeader();
-    // NS_LOG_DEBUG("Access dequeue, trans type: " << hdr.GetTypeString() << ", from=" << hdr.GetAddr2() << ", to=" << hdr.GetAddr1() << ", time: " << Simulator::Now());
-
-    Simulator::ScheduleNow(&Txop::CSRequestAccess, candidateTxop);
-  }
+  
+  m_centralizedScheduler->ScheduleNextTransmission();
   return;
 }
 

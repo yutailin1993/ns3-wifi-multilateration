@@ -78,7 +78,9 @@ public:
    *
    * \return the newly created FtmSession
    */
-  Ptr<FtmSession> CreateNewSession (Mac48Address partner, FtmSession::SessionType type);
+  Ptr<FtmSession> CreateNewSession (Mac48Address partner, FtmSession::SessionType type, bool isPassive);
+  
+  void SetPeerDistanceList(std::map<int, double> peerDistanceList, std::vector<Address> addrList);
 
   /**
    * Called from the RegularWifiMac when a FTM request has been received. It then gets forwarded to
@@ -118,6 +120,12 @@ private:
    * \return the FtmSession if it exists, 0 otherwise
    */
   Ptr<FtmSession> FindSession (Mac48Address addr);
+
+  Ptr<FtmSession> FindPassiveSession (Mac48Address addr);
+
+  double FindDistance (Mac48Address addr);
+
+  void PassiveFTM (Mac48Address peer_addr, uint64_t timestamp);  
 
   /**
    * Called from the PHY layer when a frame starts transmitting and a time stamp gets taken.
@@ -186,6 +194,8 @@ private:
 
   Mac48Address m_mac_address; //!< The mac address.
   std::map<Mac48Address, Ptr<FtmSession>> sessions; //!< The FTM sessions this manager has.
+  std::map<Mac48Address, Ptr<FtmSession>> passiveSessions;
+  std::map<Mac48Address, double> m_peerDistance;
   unsigned int received_packets;  //!< How many packets have been received, after transmitting a FTM frame.
   bool awaiting_ack; //!< Next packet should be ack.
 

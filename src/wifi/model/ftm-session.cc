@@ -63,6 +63,7 @@ FtmSession::FtmSession ()
   m_live_rtt_enabled = false;
   m_session_ended = false;
   m_got_successful_resp = false;
+  m_isPassive = false;
   CreateDefaultFtmParams ();
 
   send_packet = MakeNullCallback <void, Ptr<Packet>, WifiMacHeader> ();
@@ -118,6 +119,12 @@ FtmParams
 FtmSession::GetFtmParams (void)
 {
   return m_ftm_params;
+}
+
+void
+FtmSession::SetIsPassive()
+{
+  m_isPassive = true;
 }
 
 void
@@ -650,6 +657,17 @@ FtmSession::SetT4 (uint8_t dialog_token, uint64_t timestamp)
     {
       dialog->t4 = timestamp;
     }
+}
+
+void
+FtmSession::SetPassiveTime (uint64_t timestamp_1, uint64_t timestamp_2)
+{
+  uint8_t token = m_ftm_dialogs.size();
+  Ptr<FtmDialog> dialog = CreateNewDialog(token);
+  dialog->t1 = timestamp_1;
+  dialog->t4 = timestamp_2;
+
+  m_ftm_dialogs.insert({token, dialog});
 }
 
 Ptr<FtmSession::FtmDialog>

@@ -29,6 +29,7 @@
 
 #include <tuple>
 #include <vector>
+#include <set>
 #include <tgmath.h>
 
 WifiStandard standard = WIFI_STANDARD_80211ax;
@@ -38,8 +39,8 @@ void
 SessionOver(FtmSession in_session)
 {
 	std::tuple<size_t, size_t> connectionPair = in_session.GetSessionBelonging();
-	size_t apIdx = std::get<0>(connectionPair);
-	size_t staIdx = std::get<1>(connectionPair);
+	size_t sta1_Idx = std::get<0>(connectionPair);
+	size_t sta2_Idx = std::get<1>(connectionPair);
 	double distance = 0;
 	
 	if (in_session.GetMeanRTT() == -1) {
@@ -48,14 +49,39 @@ SessionOver(FtmSession in_session)
 		distance = in_session.GetMeanRTT()*pow(10, -12)*299792458/2;
 	}
 
-	ApStaDistList.push_back({apIdx, staIdx, distance});
+	activeDistList.push_back({sta1_Idx, sta2_Idx, distance});
 
 	// std::cout << "AP: " << apIdx << ", STA: " << staIdx << ", Successful FTM Count: " << in_session.GetIndividualRTT().size() << ", Distance: " << distance << std::endl;
 	std::map<uint8_t, Ptr<FtmSession::FtmDialog>> dialogs = in_session.GetFtmDialogs();
 
 	std::list<int64_t> theList = in_session.GetIndividualRTT();
 
-	SessionRTTs.push_back({apIdx, staIdx, theList});
+	SessionRTTs.push_back({sta1_Idx, sta2_Idx, theList});
+	DialogsCntList.push_back(dialogs.size());
+}
+
+void
+PassiveSessionOver(FtmSession in_session)
+{
+	std::tuple<size_t, size_t> connectionPair = in_session.GetSessionBelonging();
+	size_t sta1_Idx = std::get<0>(connectionPair);
+	size_t sta2_Idx = std::get<1>(connectionPair);
+	double distance = 0;
+	
+	if (in_session.GetMeanRTT() == -1) {
+		distance = -1;
+	} else {
+		distance = in_session.GetMeanRTT()*pow(10, -12)*299792458/2;
+	}
+
+	passiveDistList.push_back({sta1_Idx, sta2_Idx, distance});
+
+	// std::cout << "AP: " << apIdx << ", STA: " << staIdx << ", Successful FTM Count: " << in_session.GetIndividualRTT().size() << ", Distance: " << distance << std::endl;
+	std::map<uint8_t, Ptr<FtmSession::FtmDialog>> dialogs = in_session.GetFtmDialogs();
+
+	std::list<int64_t> theList = in_session.GetIndividualRTT();
+
+	SessionRTTs.push_back({sta1_Idx, sta2_Idx, theList});
 	DialogsCntList.push_back(dialogs.size());
 }
 
@@ -196,9 +222,18 @@ WifiEnvironment::ConstructDeviceLists()
 }
 
 void
-WifiEnvironment::SetupCentralizedScheduler(double in_alpha, Time in_periodLength, TransmissionType in_transType)
+WifiEnvironment::SetupCentralizedScheduler(double in_alpha,
+																					 Time in_periodLength,
+																					 TransmissionType in_transType,
+																					 std::vector<std::vector<int>> in_independentSets)
 {
-	m_centralizedScheduler = CreateObject<CentralizedScheduler> (in_alpha, in_periodLength, in_transType);
+
+	m_centralizedScheduler = CreateObject<CentralizedScheduler> (in_alpha,
+																															 in_periodLength, 
+																															 in_transType, 
+																															 in_independentSets);
+	
+	m_centralizedScheduler->ConstructStaAddrTable(m_staAddrs);
 
 	for (int i=0; i<m_nSTAs+m_nAPs; i++) {
 		m_wifiAll[i]->GetMac()->SetupCentralizedScheduler(i, m_centralizedScheduler);
@@ -276,9 +311,15 @@ WifiEnvironment::GetApPositions()
 }
 
 AddressList
-WifiEnvironment::GetRecvAddress()
+WifiEnvironment::GetApAddress()
 {
 	return m_apAddrs;
+}
+
+AddressList
+WifiEnvironment::GetStaAddress()
+{
+	return m_staAddrs;
 }
 
 Ptr<NetDevice>
@@ -304,7 +345,8 @@ WifiEnvironment::GetDevice(DeviceType in_deviceType, int in_deviceNo)
 Multilateration::~Multilateration()
 {
 	m_ftmParams.~FtmParams();
-	ApStaDistList.clear();
+	activeDistList.clear();
+	passiveDistList.clear();
 	DialogsCntList.clear();
 }
 
@@ -329,11 +371,42 @@ Multilateration::GenerateWirelessErrorModel(Ptr<WifiNetDevice> in_sta)
 }
 
 Ptr<FtmSession>
+Multilateration::GeneratePassiveFTMSession(std::tuple<size_t, size_t> in_connectionPair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr)
+{
+	Ptr<WifiMac> staMac = in_STA->GetMac()->GetObject<WifiMac> ();
+	Mac48Address toAddr = Mac48Address::ConvertFrom(in_recvAddr);
+	Ptr<FtmSession> session = staMac->NewFtmSession(toAddr, true);
+
+	if (session == 0) {
+		NS_FATAL_ERROR("FTM not enabled!");
+	}
+
+	switch (m_errorModel) {
+		case EModel::WIRED_ERROR:
+			session->SetFtmErrorModel(GenerateWiredErrorModel());
+			break;
+		case EModel::WIRELESS_ERROR:
+			session->SetFtmErrorModel(GenerateWirelessErrorModel(in_STA));
+			break;
+		case EModel::NO_ERROR:
+			break;
+
+		default:
+			NS_FATAL_ERROR ("Undefined Error Model!");
+	}
+
+	session->SetSessionBelonging(in_connectionPair);
+	session->SetSessionOverCallback(MakeCallback(&PassiveSessionOver));
+
+	return session;
+}
+
+Ptr<FtmSession>
 Multilateration::GenerateFTMSession(std::tuple<size_t, size_t> in_connectionPair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr)
 {
 	Ptr<WifiMac> staMac = in_STA->GetMac()->GetObject<WifiMac> ();
 	Mac48Address toAddr = Mac48Address::ConvertFrom(in_recvAddr);
-	Ptr<FtmSession> session = staMac->NewFtmSession(toAddr);
+	Ptr<FtmSession> session = staMac->NewFtmSession(toAddr, false);
 
 	if (session == 0) {
 		NS_FATAL_ERROR("FTM not enabled!");
@@ -360,6 +433,46 @@ Multilateration::GenerateFTMSession(std::tuple<size_t, size_t> in_connectionPair
 	return session;
 }
 
+double 
+Multilateration::DistanceCalculate(double x1, double y1, double x2, double y2)
+{
+	double x = x1 - x2; //calculating number to square in next step
+	double y = y1 - y2;
+	double dist;
+
+	dist = pow(x, 2) + pow(y, 2);       //calculating Euclidean distance
+	dist = sqrt(dist);                  
+
+	return dist;
+}
+
+std::map<int, double>
+Multilateration::ComputeDistance(size_t in_nodeIdx, int in_nSTAs, PositionList in_posList)
+{
+	std::map<int, double> peerDistances;
+	Position selfPos = in_posList[in_nodeIdx];
+	for (int i=0; i<in_nSTAs; i++) {
+		if (i==in_nodeIdx) {
+			continue;
+		}
+		Position peerPos = in_posList[i];
+		peerDistances.insert({i, DistanceCalculate(std::get<0>(selfPos), std::get<1>(selfPos),
+																							 std::get<0>(peerPos), std::get<1>(peerPos))});
+	}
+
+	return peerDistances;
+}
+
+void
+Multilateration::ConstructPeerDistance(EnvConfig in_envConf, WifiNetDevicesList in_STAs, PositionList in_posList, AddressList in_staAddrs)
+{
+	for (size_t i=0; i<in_envConf.nSTAs; i++) {
+		Ptr<WifiNetDevice> sta = in_STAs[i];
+		std::map<int, double> distanceList = ComputeDistance(i, in_envConf.nSTAs, in_posList);
+		sta->GetMac()->SetPeerDistanceList(distanceList, in_staAddrs);
+	}
+}
+
 SessionList
 Multilateration::GetAllSessions()
 {
@@ -367,15 +480,43 @@ Multilateration::GetAllSessions()
 }
 
 void
-Multilateration::ConstructAllSessions(EnvConfig in_envConf, WifiNetDevicesList in_APs, WifiNetDevicesList in_STAs, AddressList in_recvAddrs)
+Multilateration::ConstructIfSessions(std::vector<int> in_anchorSTAs, WifiNetDevicesList in_APs, WifiNetDevicesList in_STAs, AddressList in_apAddrs)
+{
+	for (auto &s : in_anchorSTAs) {
+		for (size_t j=0; j<3; j++) {
+			Ptr<WifiNetDevice> sta = in_STAs[s];
+			Ptr<WifiNetDevice> ap = in_APs[j];
+			Address recvAddr = in_apAddrs[j];
+			std::tuple<size_t, size_t> connectionPair = {j, s};
+			m_sessionList.push_back(GenerateFTMSession(connectionPair, sta, recvAddr));
+		}
+	}
+}
+
+void
+Multilateration::ConstructActiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_recvAddrs, std::set<std::vector<int>> in_nodeLinks)
+{
+	for (auto &list : in_nodeLinks) {
+		Ptr<WifiNetDevice> sta_1 = in_STAs[list[0]];
+		Ptr<WifiNetDevice> sta_2 = in_STAs[list[1]];
+		Address recvAddr = in_recvAddrs[list[1]];
+		std::tuple<size_t, size_t> connectionPair = {list[1], list[0]};
+		m_sessionList.push_back(GenerateFTMSession(connectionPair, sta_1, recvAddr));
+	}
+}
+
+void
+Multilateration::ConstructPassiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_recvAddrs)
 {
 	for (size_t i=0; i<in_envConf.nSTAs; i++) {
-		for (size_t j=0; j<3; j++) {
+		for (size_t j=0; j<in_envConf.nSTAs; j++) {
+			if (j == i) {
+				continue;
+			}
 			Ptr<WifiNetDevice> sta = in_STAs[i];
-			Ptr<WifiNetDevice> ap = in_APs[j];
 			Address recvAddr = in_recvAddrs[j];
 			std::tuple<size_t, size_t> connectionPair = {j, i};
-			m_sessionList.push_back(GenerateFTMSession(connectionPair, sta, recvAddr));
+			m_passiveSessionList.push_back(GeneratePassiveFTMSession(connectionPair, sta, recvAddr));
 		}
 	}
 }
@@ -435,6 +576,12 @@ void
 Multilateration::EndAllSessions()
 {
 	for (auto &sessionIter : m_sessionList) {
+		if (!sessionIter->GetSessionEnded()) {
+			sessionIter->CallEndSession();
+		}
+	}
+
+	for (auto &sessionIter : m_passiveSessionList) {
 		if (!sessionIter->GetSessionEnded()) {
 			sessionIter->CallEndSession();
 		}

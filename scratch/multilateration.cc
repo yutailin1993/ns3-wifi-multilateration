@@ -1,4 +1,9 @@
 #include <cmath>
+#include <vector>
+#include <set>
+#include <iostream>
+#include <sstream>
+#include <cstdlib>
 
 #include "ns3/command-line.h"
 #include "ns3/config.h"
@@ -21,6 +26,71 @@ using namespace ns3;
  *  | 2 3 |
  */
 typedef std::tuple<double, double, double, double> MatrixForm2D;
+
+std::string
+exec(const std::string cmd)
+{
+	std::array<char, 128> buffer;
+	std::string result;
+	std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+	if (!pipe) {
+		throw std::runtime_error("popen() failed");
+	}
+	while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+		result += buffer.data();
+	}
+
+	return result;
+}
+
+std::vector<std::vector<double>>
+PositionListToVectorList(PositionList in_Positions)
+{
+	std::vector<std::vector<double>> positionVectors;
+	for (const auto &pos : in_Positions) {
+		positionVectors.push_back({std::get<0>(pos), std::get<1>(pos)});
+	}
+	return positionVectors;
+}
+
+std::vector<std::vector<int>>
+GetIndependentSets(PositionList sta_positions)
+{
+	std::vector<std::vector<double>> positionsList = PositionListToVectorList(sta_positions);
+
+	std::ostringstream strMatrixData = ConstructStringMatrix<double>(positionsList);
+
+	std::string command = "python3 mds.py --idSets " + strMatrixData.str();
+	std::string output = exec(command);
+
+	std::vector<std::vector<int>> node_lists;
+	std::istringstream outputStream(output);
+	std::string line;
+	while (std::getline(outputStream, line)) {
+		std::istringstream lineStream(line);
+		std::vector<int> row;
+		int element;
+		while (lineStream >> element) {
+			row.push_back(element);
+		}
+		node_lists.push_back(row);
+	}
+
+	return node_lists;
+}
+
+std::set<std::vector<int>>
+GetPeerLinksFromIndependentSets(std::vector<std::vector<int>> in_independentSets)
+{
+	std::set<std::vector<int>> peerLinks;
+	for (auto setList : in_independentSets) {
+		for (int i=0; i<setList.size(); i+=2) {
+			peerLinks.insert({setList[i], setList[i+1]});
+		}
+	}
+
+	return peerLinks;
+}
 
 MatrixForm2D
 InverseMatrix(MatrixForm2D in_matrix)
@@ -87,12 +157,130 @@ LeastSquareError2D(PositionList apPosList, double distArray[])
 	return {std::get<0>(result), std::get<1>(result), 0};
 }
 
+std::vector<std::vector<double>>
+GetEDM(EnvConfig in_envConf)
+{
+	// initialize
+	std::vector<std::vector<double>> EDM;
+	for (int i=0; i<in_envConf.nSTAs; i++) {
+		std::vector<double> distVec(in_envConf.nSTAs, 0.0);
+		EDM.push_back(distVec);
+	}
+
+	// get real p2p distance
+	for (int i=0; i<in_envConf.nSTAs; i++) {
+		for (int j=0; j<in_envConf.nSTAs; j++) {
+			auto activeDistTpl = std::find_if(activeDistList.begin(), activeDistList.end(),
+														[j, i](const std::tuple<size_t, size_t, double>& e)
+														{return (std::get<0>(e) == i && std::get<1>(e) == i);}
+														);
+			auto passiveDistTpl = std::find_if(passiveDistList.begin(), passiveDistList.end(),
+														[j, i](const std::tuple<size_t, size_t, double>& e)
+														{return (std::get<0>(e) == i && std::get<1>(e) == i);}
+														);
+
+			double dist = 0.0;
+			if (activeDistTpl != activeDistList.end()) {
+				dist += std::get<2>(*activeDistTpl);
+			}
+
+			if (passiveDistTpl != passiveDistList.end()) {
+				dist += std::get<2>(*passiveDistTpl);
+				dist /= 2;
+			}
+			
+			EDM[i][j] = dist;
+		}
+	}
+}
+
+std::vector<std::tuple<double, double, double>>
+CalculateP2Pposision (EnvConfig in_envConf, PositionList in_anchorNodesPos, std::vector<int> in_anchorIdx)
+{
+	std::vector<std::vector<double>> EDM;
+	EDM = GetEDM(in_envConf);
+
+	return GetEstimatedPositions(EDM, in_anchorNodesPos, in_anchorIdx);
+}
+
+template <class T>
+std::ostringstream
+ConstructStringVector(std::vector<T> in_vectorData)
+{
+	std::ostringstream strVectorData;
+	strVectorData << "[";
+	for (const auto &element : in_vectorData) {
+		strVectorData << element << ",";
+	}
+	strVectorData << "]";
+}
+
+template <class T>
+std::ostringstream
+ConstructStringMatrix(std::vector<std::vector<T>> in_matrixData)
+{
+	std::ostringstream strMatrixData;
+	strMatrixData << "[";
+	for (const auto &row : in_matrixData) {
+		strMatrixData << "[";
+		for (const auto &element : row) {
+			strMatrixData << element << ",";
+		}
+		strMatrixData << "],";
+	}
+	strMatrixData << "]";
+
+	return strMatrixData;
+}
+
+std::vector<std::tuple<double, double, double>>
+GetEstimatedPositions(std::vector<std::vector<double>> in_EDM, PositionList in_anchorNodesPos, std::vector<int> in_anchorNodesIdx)
+{
+	std::vector<std::vector<double>> nodesPosMatrix = PositionListToVectorList(in_anchorNodesPos);
+	
+	std::ostringstream strAnchorNodesPos = ConstructStringMatrix<double>(nodesPosMatrix);
+	std::ostringstream strEDM = ConstructStringMatrix<double>(in_EDM);
+	std::ostringstream strNodesIdx = ConstructStringVector<int>(in_anchorNodesIdx);
+	
+	// sys.argv[2] is EDM, sys.argv[3] is anchor_nodes_pos, and sys.argv[4] is anchor_nodes_idx
+	std::string command = "python3 mds.py --getLocs " + strEDM.str() + " " + strAnchorNodesPos.str() + " " + strNodesIdx.str();
+	std::string output = exec(command);
+
+	std::vector<std::vector<double>> vPositions;
+	std::istringstream outputStream(output);
+	std::string line;
+	while (std::getline(outputStream, line)) {
+		std::istringstream lineStream(line);
+		std::vector<double> row;
+		double element;
+		while (lineStream >> element) {
+			row.push_back(element);
+		}
+		vPositions.push_back(row);
+	}
+
+	std::vector<std::tuple<double, double, double>> estimatedPositions;
+
+	for (const auto &row : vPositions) {
+		assert (row.size() == 2);
+		double x = row[0];
+		double y = row[1];
+		estimatedPositions.push_back({x, y, 0.0});
+	}
+
+	assert (estimatedPositions.size() == in_EDM.size());
+
+	return estimatedPositions;
+}
+
+
+
 Position
 CalculatePosition(size_t in_staIdx, EnvConfig in_envConf, PositionList in_apPosList)
 {
 	double distArray[in_envConf.nAPs];
 	for (size_t i=0; i<in_envConf.nAPs; i++) {
-		auto distTpl = std::find_if(ApStaDistList.begin(), ApStaDistList.end(),
+		auto distTpl = std::find_if(activeDistList.begin(), activeDistList.end(),
 														[i, in_staIdx](const std::tuple<size_t, size_t, double>& e)
 														{return (std::get<0>(e) == i && std::get<1>(e) == in_staIdx);}
 														);
@@ -183,7 +371,7 @@ RunSession(Ptr<FtmSession> in_session)
 	in_session->SessionBegin();
 }
 
-std::tuple<double, double, double, double, double, int>
+std::tuple<double, double, double, double, double>
 RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_envConf, UdpConfig in_udpConfig, double in_simulationTime)
 {
 	// PositionList staPosList(glob_staPosList.begin(), glob_staPosList.begin()+in_envConf.nSTAs);
@@ -210,16 +398,30 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	wifiEnv.SetupDevicePhy(in_seed, strChannelSettings);
 	wifiEnv.SetupMobility();
 	wifiEnv.ConstructDeviceLists();
-	wifiEnv.SetupCentralizedScheduler(alpha, MilliSeconds(1000/in_nBursts), TransmissionType::FTM);
+
+	std::vector<std::vector<int>> independentSets = GetIndependentSets(wifiEnv.GetStaPositions());
+	std::set<std::vector<int>> peerLinks = GetPeerLinksFromIndependentSets(independentSets);
+
+	wifiEnv.SetupCentralizedScheduler(alpha,
+																		MilliSeconds(1000/in_nBursts),
+																		TransmissionType::FTM,
+																		independentSets);
 	
 	wifiEnv.SetupApplication();
 
 	WifiNetDevicesList wifiAPlist = wifiEnv.GetWifiAPs();
 	WifiNetDevicesList wifiSTAlist = wifiEnv.GetWifiSTAs();
-	AddressList apAddrList = wifiEnv.GetRecvAddress();
+	AddressList apAddrList = wifiEnv.GetApAddress();
+	AddressList staAddrList = wifiEnv.GetStaAddress();
 
 	positioning.SetFTMParams(in_nBursts, in_simulationTime, in_envConf.nSTAs, alpha);
-	positioning.ConstructAllSessions(in_envConf, wifiAPlist, wifiSTAlist, apAddrList);
+	positioning.ConstructActiveSessions(in_envConf, wifiSTAlist, staAddrList, peerLinks);
+	positioning.ConstructPassiveSessions(in_envConf, wifiSTAlist, staAddrList);
+
+	positioning.ConstructPeerDistance(in_envConf, wifiSTAlist, wifiEnv.GetStaPositions(), staAddrList);
+
+	/*TODO: Missing the part where select 3 nodes to do Infrastructure Positioning */
+
 	SessionList allSessions = positioning.GetAllSessions();
 
 	for (Ptr<FtmSession> session : allSessions) {
@@ -251,16 +453,24 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	// std::cout << avgAppThroughput << "," << std::endl;
 
 	double totalErr = 0.0;
-	int lossSTACount = 0;
-	for (int i=0; i<in_envConf.nSTAs; i++) {
-		Position estimatedPos = CalculatePosition(i, in_envConf, apPosList);
 
-		if (std::get<0>(estimatedPos) == -1000 && std::get<1>(estimatedPos) == -1000) {
-			lossSTACount += 1;
-			continue;
-		}
-		totalErr += CalculatePosDiff(staGroundTruthPosList[i], estimatedPos);
+	PositionList anchorSTAPoses(staGroundTruthPosList.begin(), staGroundTruthPosList.begin() + 3);
+	std::vector<int> anchorIdx = {0, 1, 2};
+	PositionList estimatedNodesPos = CalculateP2Pposision(in_envConf, anchorSTAPoses, anchorIdx);
+
+	for (int i=0; i<in_envConf.nSTAs; i++) {
+		totalErr += CalculatePosDiff(staGroundTruthPosList[i], estimatedNodesPos[i]);
 	}
+
+	// for (int i=0; i<in_envConf.nSTAs; i++) {
+	// 	Position estimatedPos = CalculatePosition(i, in_envConf, apPosList);
+
+	// 	if (std::get<0>(estimatedPos) == -1000 && std::get<1>(estimatedPos) == -1000) {
+	// 		lossSTACount += 1;
+	// 		continue;
+	// 	}
+	// 	totalErr += CalculatePosDiff(staGroundTruthPosList[i], estimatedPos);
+	// }
 
 	double ftmDiaglossRate = 0.0;
 	int totalSessionsNum = DialogsCntList.size(); 
@@ -268,29 +478,13 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 		ftmDiaglossRate += double(in_nBursts * 10 * in_simulationTime - DialogsCntList[i]) / double(in_nBursts * 10 * in_simulationTime);
 	}
 
-	// for (int i=0; i<in_envConf.nAPs; i++) {
-	// 	for (int j=0; j<in_envConf.nSTAs; j++) {
-	// 		std::list<double> diffList = GetAvgDistDiff(i, j, apPosList[i], staGroundTruthPosList[j]);
-
-	// 		double avgDiff = 0;
-	// 		int size = diffList.size();
-
-	// 		for (double diff : diffList) {
-	// 			avgDiff += diff;
-	// 		}
-
-	// 		std::cout << fabs(avgDiff / size) << "," << std::endl;
-	// 	}
-	// }
-
 	return {
 		appThroughput,
 		avgAppThroughput,
-		totalErr/(in_envConf.nSTAs - lossSTACount),
+		totalErr,
 		packetLossRate,
 		ftmDiaglossRate/totalSessionsNum,
-		lossSTACount
-		};
+	};
 }
 
 int
@@ -321,7 +515,7 @@ main(int argc, char *argv[])
   
 	for (size_t staPerAP=10; staPerAP<60; staPerAP+=10) {
 		std::cout << "# STA: " << staPerAP*3 << ", With CS " << std::endl;
-		std::vector<std::tuple<double, double, double, double, double, int>> resultsList;
+		std::vector<std::tuple<double, double, double, double, double>> resultsList;
 		
 		EnvConfig envConf = {
 			3, // nAPs
@@ -359,11 +553,6 @@ main(int argc, char *argv[])
 		std::cout << "DistErr" << std::endl;
 		for (auto &tupItr : resultsList) {
 			std::cout << std::get<2>(tupItr) << "," << std::endl;
-		}
-
-		std::cout << "Loss STA count" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<5>(tupItr) << "," << std::endl; 
 		}
 
 	}

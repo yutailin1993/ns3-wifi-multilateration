@@ -479,7 +479,9 @@ public:
    * @param partner 
    * @return Ptr<FtmSession> 
    */
-  Ptr<FtmSession> NewFtmSession (Mac48Address partner);
+  Ptr<FtmSession> NewFtmSession (Mac48Address partner, bool isPassive);
+
+  void SetPeerDistanceList(std::map<int, double> peerDistanceList, std::vector<Address> addrList);
 
   /**
    * Return the maximum A-MPDU size of the given Access Category.

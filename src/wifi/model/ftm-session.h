@@ -103,6 +103,8 @@ public:
    */
   void SetSessionOverCallback (Callback<void, FtmSession> callback);
 
+  void SetIsPassive();
+
   /**
    * Set the session over callback of the manager. Used to remove sessions that have ended.
    *
@@ -247,6 +249,7 @@ public:
    */
   std::tuple<size_t, size_t> GetSessionBelonging (void);
 
+  void SetPassiveTime(uint64_t timestamp_1, uint64_t timestamp_2);
 
   /**
    * Set the default parameters for this session. These are used when no parameters are set.
@@ -276,6 +279,7 @@ private:
   FtmParams m_default_ftm_params;  //!< The default FtmParams.
   uint64_t m_preamble_detection_duration;  //!< The preamble detection duration.
   bool m_got_successful_resp; //!< Flag indicating the session got at least one response.
+  bool m_isPassive;
 
   Ptr<FtmDialog> m_current_dialog;  //!< The current dialog.
   uint8_t m_current_dialog_token;  //!< The current dialog token.

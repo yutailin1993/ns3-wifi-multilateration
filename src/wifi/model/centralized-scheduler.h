@@ -32,6 +32,8 @@
 #include <vector>
 #include <tuple>
 #include <queue>
+#include <list>
+#include <map>
 
 namespace ns3 {
 
@@ -48,38 +50,46 @@ class CentralizedScheduler : public Object
 public:
 	CentralizedScheduler(double in_timeTrackerAlpha,
 											 Time in_timeTrackerPeriodLength,
-											 TransmissionType in_startTransType);
+											 TransmissionType in_startTransType,
+											 std::vector<std::vector<int>> in_independentSets);
 	virtual ~CentralizedScheduler();
 	void TransmissionStart();
 	void TransmissionEnd();
 	void BeginTransmit(Ptr<Txop> in_txop);
-	bool GetTransmissionGranted(Ptr<Txop> in_txop);
 	bool IsTransmitting();
 	bool EnqueueTransmission(Ptr<Txop> in_txop);
+	bool ScheduleNextTransmission();
 	void ReleaseLock();
-	Ptr<Txop> DequeueTransmission();
-	Mac48Address GetTransToAddr();
-	Mac48Address GetTransFromAddr();
+	void ConstructStaAddrTable(std::vector<Address> in_staAddrs);
+	TransmissionType GetCurrentGrantedTransmissionType();
+	Ptr<Txop> DataDequeueTransmission();
+	Ptr<Txop> FtmDequeueTransmission(int in_candidate, int in_candidate_peer);
+	Mac48Address GetAddressBySTAIndex(int in_index);
+	std::vector<int> GetNextIndependentSet();
 
 protected:
 	void DoDispose (void) override;
+	Ptr<Txop> GetFtmCandidateTxop(int in_candidate, int in_candidate_peer);
 	bool GetLock();
 
 private:
 	TransmissionType GetTransmissionType(Ptr<Packet> in_packet, WifiMacHeader in_hdr);
+	Ptr<Txop> GetValidTxopByInQueue();
 	void SwitchTransType();
+	void InsertOrAssignAddress(int in_index, Mac48Address in_macAddr);
 
 	Mac48Address m_ftmRequestAddr; // The address that request FTM
 	Mac48Address m_ftmResponseAddr; // The address that response FTM
 	Ptr<SchedulerTimeTracker> m_timeTracker;
+	int m_currentIndependentSetIdx;
 	TransmissionType m_currTransType;
-	Ptr<Txop> m_grantedTxop;
-	std::vector<Mac48Address> m_transPairAddr; // idx 0 is To addr, idx 1 is From Addr
-	std::vector<Mac48Address> m_preTransPairAddr;
-	std::queue<Ptr<Txop>> m_ftmTxopQueue;
-	std::queue<Ptr<Txop>> m_dataTxopQueue;
-	std::queue<Ptr<Txop>> m_mgtOtherQueue;
-	std::queue<Ptr<Txop>> m_broadcastQueue;
+	std::list<Ptr<Txop>> m_ftmTxopQueue;
+	std::list<Ptr<Txop>> m_dataTxopQueue;
+	std::list<Ptr<Txop>> m_mgtOtherQueue;
+	std::list<Ptr<Txop>> m_broadcastQueue;
+	std::map<int, Mac48Address> m_staMacAddresses;
+	std::vector<std::vector<int>> m_independentSets;
+
 	bool m_isTransmitting;
 	int m_lock;
 	

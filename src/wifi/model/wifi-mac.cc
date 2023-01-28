@@ -1573,13 +1573,19 @@ WifiMac::DisableCs (void)
 }
 
 Ptr<FtmSession>
-WifiMac::NewFtmSession (Mac48Address partner)
+WifiMac::NewFtmSession (Mac48Address partner, bool isPassive)
 {
   NS_LOG_FUNCTION (this << partner);
   if (m_ftm_enabled) {
-    return m_ftm_manager->CreateNewSession(partner, FtmSession::FTM_INITIATOR);
+    return m_ftm_manager->CreateNewSession(partner, FtmSession::FTM_INITIATOR, isPassive);
   }
   return 0;
+}
+
+void
+WifiMac::SetPeerDistanceList(std::map<int, double> peerDistanceList, std::vector<Address> addrList)
+{
+  m_ftm_manager->SetPeerDistanceList(peerDistanceList, addrList); 
 }
 
 void

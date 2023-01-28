@@ -6,6 +6,8 @@ import sys
 
 from collections import defaultdict
 
+from sklearn.manifold import MDS
+
 num_nodes = 12
 
 
@@ -576,13 +578,12 @@ def mds_relative_to_absolute_scale(estimated_coordinates, indices_of_anchors, an
         
         diff_A = A - np.tile(centroid_A, (1, num_anchors))
         diff_B = B - np.tile(centroid_B, (1, num_anchors))
-        
 
-        H = np.matmul(diff_A, np.transpose(diff_B))
+        H = diff_A @ np.transpose(diff_B)
 
         u, _, v = np.linalg.svd(H)
 
-        rotation = np.matmul(v, np.transpose(u))
+        rotation = v.T @ u.T
 
         # find translation
         translation = np.matmul(-rotation, centroid_A) + centroid_B
@@ -591,17 +592,62 @@ def mds_relative_to_absolute_scale(estimated_coordinates, indices_of_anchors, an
 
     rotation, translation, scale = rigid_transform_3D(A, B)
     
+    # print ("Rotation: \n{},\nTranslation: \n{},\nScale: {}".format(rotation, translation, scale))
+
     estimated_coord_mds = np.matmul(rotation, (scale*all_estimate_coordinates)) + np.tile(translation, (1, num_of_points))
 
     return np.transpose(estimated_coord_mds)
 
+def applyMDS(completeEDM):
+    mds = MDS(n_components=2,
+              max_iter=3000,
+              eps=1e-9,
+              dissimilarity="precomputed",
+              normalized_stress='auto')
+
+    node_locations = mds.fit_transform(completeEDM)
+
+    return node_locations
 
 if __name__ == '__main__':
-        nodes_pos = np.array(json.loads(sys.argv[1]))
+    if (sys.argv[1] == '--idSets'):
+        nodes_pos = np.array(json.loads(sys.argv[2]))
         node_num = nodes_pos.shape[1]
         loc_pos = LocMap(nodes_pos)
         loc_pos.BFS(random.randint(0, node_num))
 
         p2p_graph = loc_pos.get_graph()
         dist_matrix = loc_pos.get_dist_matrix()
+
+        link_edges, comm_edges_list, labels = construct_edges(node_num, p2p_graph, dist_matrix, np.count_nonzero(p2p_graph == 1)/2)
+
+        conf_graph_obj = ConflictGraph(node_num, nodes_pos, dist_matrix, p2p_graph, link_edges)
+        conf_graph_obj.construct_conflict_graph()
+        conf_graph_obj.construct_independent_sets_by_edges()
+        
+        independent_sets_peer_links = conf_graph_obj.get_independent_peer_links()
+        
+        for row in independent_sets_peer_links:
+            print (" ".join(str(x) for x in row))
+
+    elif (sys.argv[1] == '--getLocs'):
+        measured_dist_matrix = np.array(json.loads(sys.argv[2]))
+        anchor_nodes_pos = np.array(json.loads(sys.argv[3]))
+        anchor_nodes_idx = np.array(json.loads(sys.argv[4]))
+
+        assert (measured_dist_matrix.shape[0] == measured_dist_matrix.shape[1])
+
+        recon = DistMatrixReconstruction(measured_dist_matrix, measured_dist_matrix.shape[0])
+
+        D = recon.EDM_Completion(0.8, 0.05)
+
+        mds = applyMDS(D)
+
+        estimated_pos = mds_relative_to_absolute_scale(mds, anchor_nodes_idx, anchor_nodes_pos)
+
+        for row in estimated_pos:
+            print (" ".join(str(x) for x in row))
+
+    else:
+        raise("Function not impelemented!")
 

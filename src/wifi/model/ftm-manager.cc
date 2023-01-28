@@ -66,6 +66,7 @@ FtmManager::~FtmManager ()
   TraceDisconnectWithoutContext("PhyTxBegin", MakeCallback(&FtmManager::PhyTxBegin, this));
   TraceDisconnectWithoutContext("PhyRxBegin", MakeCallback(&FtmManager::PhyRxBegin, this));
   sessions.clear();
+  passiveSessions.clear();
   m_blocked_partners.clear();
   m_txop = 0;
 }
@@ -95,6 +96,8 @@ FtmManager::PhyTxBegin(Ptr<const Packet> packet, double num)
                   copy->RemoveHeader(ftm_resp_hdr);
                   session->SetT1(ftm_resp_hdr.GetDialogToken(), pico_sec);
 
+                  PassiveFTM(hdr.GetAddr1(), pico_sec);
+
                   received_packets = 0;
                   awaiting_ack = true;
 
@@ -115,6 +118,7 @@ FtmManager::PhyTxBegin(Ptr<const Packet> packet, double num)
               if (session != 0)
                 {
                   session->SetT3(m_current_rx_packet.ftm_res_hdr.GetDialogToken(), pico_sec);
+                  PassiveFTM(hdr.GetAddr1(), pico_sec);
                 }
           }
       }
@@ -182,9 +186,20 @@ FtmManager::SetMacAddress(Mac48Address addr)
 }
 
 Ptr<FtmSession>
-FtmManager::CreateNewSession (Mac48Address partner, FtmSession::SessionType type)
+FtmManager::CreateNewSession (Mac48Address partner, FtmSession::SessionType type, bool isPassive)
 {
-  if(FindSession(partner) == 0 && !CheckSessionBlocked (partner) && partner != m_mac_address)
+  if (isPassive) {
+    if (FindPassiveSession(partner) == 0 && partner != m_mac_address)
+    {
+      Ptr<FtmSession> new_session = CreateObject<FtmSession> ();
+      new_session->InitSession(partner, type, MakeCallback(&FtmManager::SendPacket, this));
+      new_session->SetSessionOverCallbackManager(MakeCallback(&FtmManager::SessionOver, this));
+      new_session->SetIsPassive();
+      passiveSessions.insert({partner, new_session});
+      return new_session;
+    }
+  } else { 
+    if (FindSession(partner) == 0 && !CheckSessionBlocked (partner) && partner != m_mac_address)
     {
       Ptr<FtmSession> new_session = CreateObject<FtmSession> ();
       new_session->InitSession(partner, type, MakeCallback(&FtmManager::SendPacket, this));
@@ -195,6 +210,7 @@ FtmManager::CreateNewSession (Mac48Address partner, FtmSession::SessionType type
       sessions.insert({partner, new_session});
       return new_session;
     }
+  }
   return 0;
 }
 
@@ -221,6 +237,54 @@ FtmManager::FindSession (Mac48Address addr)
   return 0;
 }
 
+double
+FtmManager::FindDistance(Mac48Address addr)
+{
+  auto search = m_peerDistance.find(addr);
+  if (search != m_peerDistance.end()) {
+    return search->second;
+  }
+
+  NS_FATAL_ERROR("Cannot find distance by addr: ");
+  return -1;
+
+}
+
+Ptr<FtmSession>
+FtmManager::FindPassiveSession (Mac48Address addr)
+{
+  auto search = passiveSessions.find(addr);
+  if (search != passiveSessions.end()) {
+    return search->second;
+  }
+
+  return 0;
+}
+
+void
+FtmManager::PassiveFTM (Mac48Address peer_addr, uint64_t timestamp)
+{
+  double distance = FindDistance(peer_addr);
+  std::map<Mac48Address, double>::iterator it;
+  for (it = m_peerDistance.begin(); it != m_peerDistance.end(); it++) {
+    if (it->second <= distance) {
+      Ptr<FtmSession> session = FindPassiveSession(it->first);
+      int64_t distanceTime = Seconds(it->second * pow(10, 12) / 299792458).GetPicoSeconds();
+      distanceTime &= 0x0000FFFFFFFFFFFF;
+      session->SetPassiveTime(timestamp, timestamp + distanceTime);
+    }
+  }
+}
+
+void
+FtmManager::SetPeerDistanceList(std::map<int, double> peerDistanceList, std::vector<Address> addrList)
+{
+  std::map<int, double>::iterator it;
+  for (it = peerDistanceList.begin(); it != peerDistanceList.end(); it++) {
+    m_peerDistance.insert({Mac48Address::ConvertFrom(addrList[it->first]), it->second});
+  }
+}
+
 void
 FtmManager::SessionOver (Mac48Address addr)
 {
@@ -233,7 +297,7 @@ FtmManager::ReceivedFtmRequest (Mac48Address partner, FtmRequestHeader ftm_req)
   Ptr<FtmSession> session = FindSession (partner);
   if (session == 0)
     {
-      session = CreateNewSession(partner, FtmSession::FTM_RESPONDER);
+      session = CreateNewSession(partner, FtmSession::FTM_RESPONDER, false);
     }
   session->ProcessFtmRequest(ftm_req);
 }
@@ -279,7 +343,7 @@ void
 FtmManager::OverrideSession (Mac48Address partner, FtmRequestHeader ftm_req)
 {
   std::cout << "override" << std::endl;
-  Ptr<FtmSession> session = CreateNewSession (partner, FtmSession::FTM_RESPONDER);
+  Ptr<FtmSession> session = CreateNewSession (partner, FtmSession::FTM_RESPONDER, false);
   session->ProcessFtmRequest (ftm_req);
 }
 
