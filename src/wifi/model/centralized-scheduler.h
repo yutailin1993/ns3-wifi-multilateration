@@ -58,12 +58,19 @@ public:
 	void BeginTransmit(Ptr<Txop> in_txop);
 	bool IsTransmitting();
 	bool EnqueueTransmission(Ptr<Txop> in_txop);
-	bool ScheduleNextTransmission();
+	void ScheduleNextTransmission();
 	void ReleaseLock();
 	void ConstructStaAddrTable(std::vector<Address> in_staAddrs);
+	void IncreaseScheduleTransCounter();
+	void DecreaseScheduleTransCounter();
+	void IncreaseOngoingTransCounter();
+	void DecreaseOngoingTransCounter();
+	bool IsAllTransmissionScheduled();
+	bool IsAllTransmissionEnd();
 	TransmissionType GetCurrentGrantedTransmissionType();
 	Ptr<Txop> DataDequeueTransmission();
-	Ptr<Txop> FtmDequeueTransmission(int in_candidate, int in_candidate_peer);
+	std::vector<Ptr<Txop>> FtmDequeueTransmission();
+	Ptr<Txop> FtmFindCandidate(int in_candidate, int in_candidatePeer);
 	Mac48Address GetAddressBySTAIndex(int in_index);
 	std::vector<int> GetNextIndependentSet();
 
@@ -92,6 +99,8 @@ private:
 
 	bool m_isTransmitting;
 	int m_lock;
+	int m_ongoingTransmissionCnt;
+	int m_scheduledTransmissionCnt;
 	
 };
 

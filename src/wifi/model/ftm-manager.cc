@@ -269,7 +269,7 @@ FtmManager::PassiveFTM (Mac48Address peer_addr, uint64_t timestamp)
   for (it = m_peerDistance.begin(); it != m_peerDistance.end(); it++) {
     if (it->second <= distance) {
       Ptr<FtmSession> session = FindPassiveSession(it->first);
-      int64_t distanceTime = Seconds(it->second * pow(10, 12) / 299792458).GetPicoSeconds();
+      int64_t distanceTime = Seconds(it->second).GetPicoSeconds() * 2 / 299792458 + 2 * session->GetPreambleDetectionDuration();
       distanceTime &= 0x0000FFFFFFFFFFFF;
       session->SetPassiveTime(timestamp, timestamp + distanceTime);
     }

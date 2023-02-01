@@ -59,7 +59,9 @@ CentralizedScheduler::CentralizedScheduler(double in_timeTrackerAlpha,
 	m_currTransType = in_startTransType;
 	m_isTransmitting = false;
 	m_lock = 0;
-	m_currentIndependentSetIdx = -1;
+	m_ongoingTransmissionCnt = 0;
+	m_scheduledTransmissionCnt = 0;
+	m_currentIndependentSetIdx = 0;
 
 	m_independentSets = in_independentSets;
 
@@ -124,49 +126,143 @@ CentralizedScheduler::SwitchTransType()
 std::vector<int>
 CentralizedScheduler::GetNextIndependentSet()
 {
-	m_currentIndependentSetIdx = (m_currentIndependentSetIdx + 1) % m_independentSets.size();
+	bool checked = false;
+	while (!checked) {
+		if (m_ftmTxopQueue.empty()) {
+			break;
+		}
+		Ptr<const WifiMacQueueItem> candidateItem = m_ftmTxopQueue.front()->GetWifiMacQueue()->Peek();
+		if (candidateItem == 0) {
+			m_ftmTxopQueue.pop_front();
+			continue;
+		}
+		checked = true;
+	}
 
-	return m_independentSets[m_currentIndependentSetIdx];
-}
+	if (m_ftmTxopQueue.empty()) {
+		std::vector<int> n = {-1};
+		return n;
+	}
 
-bool
-CentralizedScheduler::ScheduleNextTransmission()
-{
-	std::vector<Ptr<Txop>> cnadidateTxops;
-	if (m_currTransType == TransmissionType::DATA) {
-		cnadidateTxops.push_back(DataDequeueTransmission());
-	} else {
-		// 1D vector with multiple peer links i.e. [candidate1, candidatePeer1, candidate2, candidatePeer2, ...]
-		std::vector<int> independentSetNodes;
-		independentSetNodes = GetNextIndependentSet();
-		
-		for (int i=0; i<independentSetNodes.size(); i+=2) {
-			int candidateId = independentSetNodes[i];
-			int candidatePeerId = independentSetNodes[i+1];
-			cnadidateTxops.push_back(FtmDequeueTransmission(candidateId, candidatePeerId));
+	const Ptr<Txop> fristFTMTxop = m_ftmTxopQueue.front();
+	Mac48Address senderAddr = fristFTMTxop->GetWifiMacQueue()->Peek()->GetItem()->GetHeader().GetAddr2();
+	Mac48Address receiverAddr = fristFTMTxop->GetWifiMacQueue()->Peek()->GetItem()->GetHeader().GetAddr1();
+	
+	bool found = false;
+	int start = m_currentIndependentSetIdx;
+	while (!found) {
+		std::vector<int> set = m_independentSets[m_currentIndependentSetIdx];
+		for (int i=0; i<set.size(); i+= 2) {
+			Mac48Address candidateAddr = GetAddressBySTAIndex(set[i]);
+			Mac48Address candidatePeerAddr = GetAddressBySTAIndex(set[i+1]);
+			if (((senderAddr == candidateAddr && receiverAddr == candidatePeerAddr) ||
+				(senderAddr == candidatePeerAddr && receiverAddr == candidateAddr))) {
+					found = true;
+					break;
+				}
+		}
+		if (found) {
+			break;
+		}
+		m_currentIndependentSetIdx = (m_currentIndependentSetIdx + 1) % m_independentSets.size();
+		if (m_currentIndependentSetIdx == start) {
+			NS_FATAL_ERROR("Iterate Through independent set but couldn't found any matches!!");
 		}
 	}
 
-	int flag = 0;
-	for (auto &txop : cnadidateTxops) {
+	int k = m_currentIndependentSetIdx;
+	m_currentIndependentSetIdx = (m_currentIndependentSetIdx + 1) % m_independentSets.size();
+
+	return m_independentSets[k];
+}
+
+void
+CentralizedScheduler::ScheduleNextTransmission()
+{
+	std::vector<Ptr<Txop>> candidateTxops;
+	if (m_currTransType == TransmissionType::DATA) {
+		candidateTxops.push_back(DataDequeueTransmission());
+	} else {
+		candidateTxops = FtmDequeueTransmission();
+	}
+
+	for (auto &txop : candidateTxops) {
 		if (txop != nullptr) {
-			flag = 1;
 			NS_LOG_DEBUG("Transmission end dequeue, {mQ_size, dQ_size, fQ_size, bQ_size}={" <<
 						 				 m_mgtOtherQueue.size() << "," << m_dataTxopQueue.size() << "," << 
 						 				 m_ftmTxopQueue.size() << "," << m_broadcastQueue.size() << "}, time: " << Simulator::Now());
+			if (m_currTransType == TransmissionType::FTM) {
+				Ptr<WifiMacQueue> macQueue = txop->GetWifiMacQueue();
+				WifiMacHeader hdr = macQueue->Peek()->GetItem()->GetHeader();
+				Ptr<Packet> packet = macQueue->Peek()->GetItem()->GetPacket()->Copy();
+				WifiActionHeader action_hdr;
+				packet->RemoveHeader(action_hdr);
+				WifiActionHeader::ActionValue action = action_hdr.GetAction();
+			}
 			Simulator::ScheduleNow(&Txop::CSRequestAccess, txop);
+			IncreaseScheduleTransCounter();
 		}
 	}
+}
 
-	if (flag == 0) {
-			ReleaseLock();
+void
+CentralizedScheduler::IncreaseScheduleTransCounter()
+{
+	m_scheduledTransmissionCnt += 1;
+}
+
+void
+CentralizedScheduler::DecreaseScheduleTransCounter()
+{
+	m_scheduledTransmissionCnt -= 1;
+	assert (m_scheduledTransmissionCnt >= 0);
+}
+
+void
+CentralizedScheduler::IncreaseOngoingTransCounter()
+{
+	m_ongoingTransmissionCnt += 1;
+	NS_LOG_DEBUG("Increase ong trans current: " << m_ongoingTransmissionCnt);
+}
+
+void
+CentralizedScheduler::DecreaseOngoingTransCounter()
+{
+	m_ongoingTransmissionCnt -= 1;
+	NS_LOG_DEBUG("Decrease ong trans current: " << m_ongoingTransmissionCnt);
+	if (m_ongoingTransmissionCnt < 0) {
+		NS_LOG_DEBUG("Oh no, not acceptable!!");
+		m_ongoingTransmissionCnt = 0;
 	}
+	assert (m_ongoingTransmissionCnt >= 0);
+}
+
+bool
+CentralizedScheduler::IsAllTransmissionScheduled()
+{
+	if (m_scheduledTransmissionCnt == 0) {
+		return true;
+	}
+	return false;
+}
+
+bool
+CentralizedScheduler::IsAllTransmissionEnd()
+{
+	if (m_ongoingTransmissionCnt == 0) {
+		return true;
+	}
+	return false;
 }
 
 void
 CentralizedScheduler::TransmissionEnd()
 {
 	// Mark Transmission End, call scheduleNewTransmission()
+	DecreaseOngoingTransCounter();
+	if (!IsAllTransmissionEnd()) {
+		return;
+	}
 	m_timeTracker->MarkTransmissionEndTime();
 	m_isTransmitting = false;
 
@@ -185,8 +281,16 @@ CentralizedScheduler::BeginTransmit(Ptr<Txop> in_txop)
 							 m_mgtOtherQueue.size() << "," << m_dataTxopQueue.size() << "," << 
 							 m_ftmTxopQueue.size() << "," << m_broadcastQueue.size() << "}, time: " << Simulator::Now());
 	
-	ReleaseLock();
-	TransmissionStart();
+	DecreaseScheduleTransCounter();
+	IncreaseOngoingTransCounter();
+
+	if (IsAllTransmissionScheduled()) {
+		ReleaseLock();
+	}
+
+	if (m_ongoingTransmissionCnt == 1) {
+		TransmissionStart();
+	}
 }
 
 void
@@ -303,28 +407,17 @@ CentralizedScheduler::GetCurrentGrantedTransmissionType()
 }
 
 Ptr<Txop>
-CentralizedScheduler::FtmDequeueTransmission(int in_candidate, int in_candidate_peer)
+CentralizedScheduler::FtmFindCandidate(int in_candidate, int in_candidatePeer)
 {
-	if (!GetLock()) {
-		nullptr;
-	}
-
-	Ptr<Txop> candidateTxop = nullptr;
+	Ptr<Txop> candidateTxop;
 	int flag = 0;
-
 	while (flag == 0) {
-		if (m_broadcastQueue.empty()) {
-			candidateTxop = m_broadcastQueue.front();
-			m_broadcastQueue.pop_front();
-		} else if (!m_mgtOtherQueue.empty()) {
-			candidateTxop = m_broadcastQueue.front();
-			m_mgtOtherQueue.pop_front();
-		} else if (m_currTransType == TransmissionType::FTM && !m_ftmTxopQueue.empty()) {
-			candidateTxop = GetFtmCandidateTxop(in_candidate, in_candidate_peer);
-		} 
-	
+		if (m_currTransType == TransmissionType::FTM && !m_ftmTxopQueue.empty()) {
+			candidateTxop = GetFtmCandidateTxop(in_candidate, in_candidatePeer);
+		}
+
 		if (candidateTxop == nullptr) {
-			NS_LOG_DEBUG("Centralized Scheduler queue empty.");
+			NS_LOG_DEBUG("Cannot find FTM txop with candidate " << in_candidate << " and peer " << in_candidatePeer);
 			return nullptr;
 		}
 
@@ -349,6 +442,42 @@ CentralizedScheduler::FtmDequeueTransmission(int in_candidate, int in_candidate_
 	return candidateTxop;
 }
 
+std::vector<Ptr<Txop>>
+CentralizedScheduler::FtmDequeueTransmission()
+{
+	std::vector<Ptr<Txop>> candidateTxops;
+	if (!GetLock()) {
+		candidateTxops.push_back(nullptr);
+		return candidateTxops;
+	}
+
+	// 1D vector with multiple peer links i.e. [candidate1, candidatePeer1, candidate2, candidatePeer2, ...]
+	std::vector<int> independentSetNodes;
+	independentSetNodes = GetNextIndependentSet();
+	if (independentSetNodes[0] == -1) {
+		candidateTxops.push_back(nullptr);
+		ReleaseLock();
+		return candidateTxops;
+	}
+
+	for (int i=0; i<independentSetNodes.size(); i+=2) {
+		int candidateId = independentSetNodes[i];
+		int candidatePeerId = independentSetNodes[i+1];
+		Ptr<Txop> candidateTxop = FtmFindCandidate(candidateId, candidatePeerId);
+		if (candidateTxop == nullptr) {
+			continue;
+		}
+		candidateTxops.push_back(candidateTxop);
+	}
+
+	if (candidateTxops.size() == 0) {
+		candidateTxops.push_back(nullptr);
+		ReleaseLock();
+	}
+
+	return candidateTxops;
+}
+
 Ptr<Txop>
 CentralizedScheduler::GetFtmCandidateTxop(int in_candidate, int in_candidate_peer)
 {
@@ -359,8 +488,13 @@ CentralizedScheduler::GetFtmCandidateTxop(int in_candidate, int in_candidate_pee
 	std::list<Ptr<Txop>>::iterator iter = m_ftmTxopQueue.begin();
 
 	while (iter != m_ftmTxopQueue.end()) {
-		Mac48Address senderAddr = (*iter)->GetWifiMacQueue()->Peek()->GetItem()->GetHeader().GetAddr2();
-		Mac48Address receiverAddr = (*iter)->GetWifiMacQueue()->Peek()->GetItem()->GetHeader().GetAddr1();
+		Ptr<const WifiMacQueueItem> candidateItem = (*iter)->GetWifiMacQueue()->Peek();
+		if (candidateItem == 0) {
+			m_ftmTxopQueue.erase(iter++);
+			continue;
+		}
+		Mac48Address senderAddr = candidateItem->GetItem()->GetHeader().GetAddr2();
+		Mac48Address receiverAddr = candidateItem->GetItem()->GetHeader().GetAddr1();
 		if ((senderAddr == candidateAddr && receiverAddr == candidatePeerAddr) ||
 				(senderAddr == candidatePeerAddr && receiverAddr == candidateAddr)) {
 			candidateTxop = *iter;
@@ -396,6 +530,7 @@ CentralizedScheduler::DataDequeueTransmission()
 			m_dataTxopQueue.pop_front();
 		} else {
 			NS_LOG_DEBUG("Centralized Scheduler queue empty.");
+			ReleaseLock();
 			return nullptr;
 		}
 

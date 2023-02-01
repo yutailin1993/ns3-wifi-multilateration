@@ -67,6 +67,8 @@ PassiveSessionOver(FtmSession in_session)
 	size_t sta1_Idx = std::get<0>(connectionPair);
 	size_t sta2_Idx = std::get<1>(connectionPair);
 	double distance = 0;
+
+	in_session.PassiveCalculateRTT();
 	
 	if (in_session.GetMeanRTT() == -1) {
 		distance = -1;
@@ -80,7 +82,7 @@ PassiveSessionOver(FtmSession in_session)
 	std::map<uint8_t, Ptr<FtmSession::FtmDialog>> dialogs = in_session.GetFtmDialogs();
 
 	std::list<int64_t> theList = in_session.GetIndividualRTT();
-
+	
 	SessionRTTs.push_back({sta1_Idx, sta2_Idx, theList});
 	DialogsCntList.push_back(dialogs.size());
 }
@@ -182,7 +184,7 @@ WifiEnvironment::SetupMobility()
 	m_staPosAlloc = 
 		CreateObjectWithAttributes<RandomDiscPositionAllocator> ("X", StringValue("0"),
 																														 "Y", StringValue("0"),
-																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=20]"));
+																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=50]"));
 	m_mobility.SetPositionAllocator(m_staPosAlloc);
 	m_mobility.Install(m_wifiStaNodes);
 	

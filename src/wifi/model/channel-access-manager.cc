@@ -336,7 +336,11 @@ ChannelAccessManager::RequestAccessDir (Ptr<Txop> txop)
 
   if (m_cs_enabled) {
     if (!txop->HasFramesToTransmit() || txop->GetAccessStatus() != 0) {
-      m_centralizedScheduler->ReleaseLock();
+      m_centralizedScheduler->DecreaseScheduleTransCounter();
+      if (m_centralizedScheduler->IsAllTransmissionScheduled()) {
+        NS_LOG_ERROR("No frame to transmit! Abort!");
+        m_centralizedScheduler->ReleaseLock();
+      }
       return;
     } else {
       m_centralizedScheduler->BeginTransmit(txop);

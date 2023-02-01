@@ -659,6 +659,12 @@ FtmSession::SetT4 (uint8_t dialog_token, uint64_t timestamp)
     }
 }
 
+uint64_t
+FtmSession::GetPreambleDetectionDuration (void)
+{
+  return m_preamble_detection_duration;
+}
+
 void
 FtmSession::SetPassiveTime (uint64_t timestamp_1, uint64_t timestamp_2)
 {
@@ -737,6 +743,16 @@ std::list<int64_t>
 FtmSession::GetIndividualRTT (void)
 {
   return m_rtt_list;
+}
+
+void
+FtmSession::PassiveCalculateRTT (void)
+{
+  std::map<uint8_t, Ptr<FtmDialog>>::iterator it;
+  for (it = m_ftm_dialogs.begin(); it != m_ftm_dialogs.end(); it++) {
+    CalculateRTT(it->second);
+  }
+
 }
 
 void

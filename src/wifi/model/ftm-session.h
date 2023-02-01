@@ -186,6 +186,9 @@ public:
    */
   void SetT4 (uint8_t dialog_token, uint64_t timestamp);
 
+  uint64_t GetPreambleDetectionDuration (void);
+  void PassiveCalculateRTT (void);
+
   /**
    * Returns the map with all saved FTM dialogs. Includes a maximum of the last 255 dialogs.
    *

@@ -70,7 +70,7 @@ class LocMap:
         # plt.plot()
         plt.show()
     
-    def make_bilateration_ordering(self, S, U):
+    def make_trilateration_ordering(self, S, U):
         def _get_candidate(candidate_list, graph_mask):
             candidate = -1
             _max = -1
@@ -80,7 +80,7 @@ class LocMap:
                     candidate = i
             return candidate
 
-        print ("no bilateration ordering")
+        # print ("no trilateration ordering", file=sys.stderr)
         add_list = []
 
         graph_mask = self.graph.copy()
@@ -89,8 +89,13 @@ class LocMap:
             graph_mask[i, :] = 0
 
         for i in U:
-            if np.intersect1d(np.nonzero(self.graph[i])[0], S).shape[0] >= 1:
+            if np.intersect1d(np.nonzero(self.graph[i])[0], S).shape[0] >= 2:
                 add_list.append(i)
+        
+        if len(add_list) == 0:
+            for i in U:
+                if np.intersect1d(np.nonzero(self.graph[i])[0], S).shape[0] >= 1:
+                    add_list.append(i)
 
         candidate = _get_candidate(add_list, graph_mask)
         add_cand = -1
@@ -100,19 +105,17 @@ class LocMap:
                 add_cand = i
                 _min = self.dist_matrix[candidate, i]
         
-        print ("candidate: {}, add_candidate: {}".format(candidate, add_cand))
-        # print (self.graph)
+        # print ("candidate: {}, add_candidate: {}".format(candidate, add_cand), file=sys.stderr)
         self._add_edge(candidate, add_cand)
-        # print (self.graph)
 
-    def bilateration_ordering_check(self):
+    def trilateration_ordering_check(self):
         S = []
         U = [i for i in range(self.nodes_num)]
 
         while (len(U) > 0):
             candidate = pick_next_node(S, U, self.graph)
             if candidate == -1:
-                self.make_bilateration_ordering(S, U)
+                self.make_trilateration_ordering(S, U)
                 continue
                 
             S.append(candidate)
@@ -211,9 +214,6 @@ class ConflictGraph:
 
             conflict_edges.remove(edge_no)
             
-            # print ("node u: {}, node v: {}, \n conflict_nodes: {}, \n conflict_edges: {}".format(
-            #         node_u, node_v, conflict_nodes, conflict_edges))
-            
             for edge_idx in conflict_edges:
                 self.conflict_map[edge_no][edge_idx] = 1
                 self.conflict_map[edge_idx][edge_no] = 1
@@ -262,8 +262,6 @@ class ConflictGraph:
                 conflict_counts[i] += self.num_edges
         min_edge_no = conflict_counts.argmin()
         
-        # print (candidate_set, min_edge_no)
-
         self.remove_node_adjacent_nodes(min_edge_no, conf_map, candidate_set)
 
         return min_edge_no
@@ -337,65 +335,52 @@ class DistMatrixReconstruction:
         self.nodes_loc = np.zeros((nodes_num, 2))
 
     def sequential_multilateration(self):
-        # U = S.copy()
-        # K = []
-
-        # print (U)
-
-        # for candidate in U:
-        #     if len(K) == 0:
-        #         self.nodes_loc[candidate][0] = 0
-        #         self.nodes_loc[candidate][1] = 0
-        #     elif len(K) == 1:
-        #         assert(self.D_u[K[0], candidate] > 0)
-        #         self.nodes_loc[candidate][0] = self.D_u[K[0], candidate]
-        #         self.nodes_loc[candidate][1] = 0
-        #     elif len(K) == 2:
-        #         assert(self.D_u[K[0], candidate] > 0 and self.D_u[K[1], candidate] > 0)
-        #         self.nodes_loc[candidate][0] = self.dual_lateration(K, candidate)
-        #     else: # greater or equal to 3 nodes
-        #         adjList = np.intersect1d(K, np.nonzero(self.D_u[candidate])[0])
-        #         assert(adjList.shape[0] >= 3)
-        #         self.nodes_loc[candidate] = self.tri_lateration(adjList[:3], candidate)
-
-        S = []
+        nodes_loc = np.zeros((self.nodes_num, 2))
         U = [i for i in range(self.nodes_num)]
-        
+        S = []
+
         for _ in range(self.nodes_num):
             candidate = pick_next_node(S, U, self.D_u)
             if len(S) == 0:
-                self.nodes_loc[candidate][0] = 0
-                self.nodes_loc[candidate][1] = 0
+                nodes_loc[candidate][0] = 0
+                nodes_loc[candidate][1] = 0
             elif len(S) == 1:
                 assert(self.D_u[S[0], candidate] > 0)
-                self.nodes_loc[candidate][0] = self.D_u[S[0], candidate]
-                self.nodes_loc[candidate][1] = 0
+                nodes_loc[candidate][0] = self.D_u[S[0], candidate]
+                nodes_loc[candidate][1] = 0
             elif len(S) == 2:
                 assert(self.D_u[S[0], candidate] > 0 and self.D_u[S[1], candidate] > 0)
-                self.nodes_loc[candidate] = self.dual_lateration(S, candidate)
+                nodes_loc[candidate] = self.bilateration(S, candidate, nodes_loc)
             else: # greater or equal to 3 nodes
                 adjList = np.intersect1d(S, np.nonzero(self.D_u[candidate])[0])
                 assert(adjList.shape[0] >= 2)
-                if adjList.shape[0] == 2: # bilateration
-                    self.nodes_loc[candidate] = self.dual_lateration(S, candidate)
-                else: # trilateration
-                    self.nodes_loc[candidate] = self.tri_lateration(adjList[:3], candidate)
-            
-            S.append(candidate)
-            U.remove(candidate)
-    
-    def compute_Dcur(self):
-        D = np.zeros((self.nodes_num, self.nodes_num))
-        for i in range(self.nodes_num):
-            for j in range(self.nodes_num):
-                D[i, j] = math.sqrt(pow((self.nodes_loc[i][0]-self.nodes_loc[j][0]), 2) + pow((self.nodes_loc[i][1]-self.nodes_loc[j][1]), 2))
-        assert(np.allclose(D, D.transpose(), rtol=1e-05, atol=1e-08))
-        assert(np.trace(D) == 0)
-        return D
+                if (adjList.shape[0] == 2):
+                    nodes_loc[candidate] = self.bilateration(adjList, candidate, nodes_loc)
+                else:
+                    nodes_loc[candidate] = self.tri_lateration(np.random.choice(adjList, 3, replace=False), candidate, nodes_loc)
 
-    def generate_distance_matrices(self):
+            U.remove(candidate)
+            S.append(candidate)
+        
+        return nodes_loc
+
+    
+
+    def generate_distance_matrices(self, nodes_loc):
+        def _compute_Dcur(nodes_num, nodes_loc):
+            D = np.zeros((nodes_num, nodes_num))
+            for i in range(nodes_num):
+                for j in range(i+1, nodes_num):
+                    dist = math.sqrt(pow((nodes_loc[i][0]-nodes_loc[j][0]), 2) + pow((nodes_loc[i][1]-nodes_loc[j][1]), 2))
+                    D[i, j] = dist
+                    D[j, i] = dist
+
+            assert(np.allclose(D, D.transpose(), rtol=1e-05, atol=1e-08))
+            assert(np.trace(D) == 0)
+            return D
+
         D = np.zeros((self.nodes_num, self.nodes_num))
-        D_cur = self.compute_Dcur()
+        D_cur = _compute_Dcur(self.nodes_num, nodes_loc)
         for i in range(self.nodes_num):
             for j in range(self.nodes_num):
                 D[i, j] = self.D_u[i, j] if self.D_u[i, j] != 0 and i != j else D_cur[i, j]
@@ -417,24 +402,36 @@ class DistMatrixReconstruction:
         return rmse
 
     def EDM_Completion(self, stop_condition, gradient_ratio):
-        self.sequential_multilateration()
-        D, D_cur = self.generate_distance_matrices()
+        candidate_nodes_loc = np.zeros((self.nodes_num, self.nodes_num))
+        candidate_rmse_D = 100000000
+        for _ in range(50):
+            temp_nodes_loc = self.sequential_multilateration()
+            temp_D, temp_D_cur = self.generate_distance_matrices(temp_nodes_loc)
+            if candidate_rmse_D >= self.rmse(temp_D, temp_D_cur):
+                candidate_nodes_loc = temp_nodes_loc
+                candidate_rmse_D = self.rmse(temp_D, temp_D_cur)
+
+        self.nodes_loc = candidate_nodes_loc
+        D, D_cur = self.generate_distance_matrices(self.nodes_loc)
 
         cnt = 0
 
         while (self.rmse(D, D_cur) >= stop_condition and cnt <= 500):
-            print ("cnt: {}, Curr rmse: {}".format(cnt, self.rmse(D, D_cur)))
+            # print ("cnt: {}, Curr rmse: {}".format(cnt, self.rmse(D, D_cur)), file=sys.stderr)
             delta_D = D - D_cur
             for i in range(self.nodes_num):
                 for j in range(i+1, self.nodes_num):
                     self.update_location(i, j, delta_D[i, j], gradient_ratio)
             
-            D, D_cur = self.generate_distance_matrices()
+            D, D_cur = self.generate_distance_matrices(self.nodes_loc)
             cnt += 1
 
         return D
 
-    def dual_lateration(self, adjNodes, candidate):
+    def Get_nodes_loc(self):
+        return self.nodes_loc
+
+    def bilateration(self, adjNodes, candidate, nodes_loc):
         def _get_intersections(node_loc_0, r0, node_loc_1, r1):
             # circle 1: (x0, y0), radius r0
             # circle 2: (x1, y1), radius r1
@@ -461,13 +458,22 @@ class DistMatrixReconstruction:
 
             return np.array([x3, y3]) # we only need one result
         
-        return _get_intersections(self.nodes_loc[adjNodes[0]], self.D_u[adjNodes[0], candidate],
-                                  self.nodes_loc[adjNodes[1]], self.D_u[adjNodes[1], candidate])
+        return _get_intersections(nodes_loc[adjNodes[0]], self.D_u[adjNodes[0], candidate],
+                                  nodes_loc[adjNodes[1]], self.D_u[adjNodes[1], candidate])
     
-    def tri_lateration(self, adjNodes, candidate):
-        loc0 = self.nodes_loc[adjNodes[0]]
-        loc1 = self.nodes_loc[adjNodes[1]]
-        loc2 = self.nodes_loc[adjNodes[2]]
+    def tri_lateration(self, adjNodes, candidate, nodes_loc):
+        def matrixInverse(inputM):
+            e0 = inputM[0, 0]
+            e1 = inputM[0, 1]
+            e2 = inputM[1, 0]
+            e3 = inputM[1, 1]
+            m = 1.0 / (e0*e3 - e1*e2)
+            matrix = np.array([[m*e3, m*(-e1)], [m*(-e2), m*e0]])
+            return matrix
+
+        loc0 = nodes_loc[adjNodes[0]]
+        loc1 = nodes_loc[adjNodes[1]]
+        loc2 = nodes_loc[adjNodes[2]]
 
         A = np.array([[2*(loc0[0]-loc1[0]), 2*(loc0[1]-loc1[1])],
                       [2*(loc0[0]-loc2[0]), 2*(loc0[1]-loc2[1])]])
@@ -475,10 +481,11 @@ class DistMatrixReconstruction:
         L = np.array([pow(self.D_u[adjNodes[1], candidate], 2)-pow(self.D_u[adjNodes[0], candidate], 2)-(pow(loc1[0], 2)-pow(loc0[0], 2))-(pow(loc1[1], 2)-pow(loc0[1], 2)),
                       pow(self.D_u[adjNodes[2], candidate], 2)-pow(self.D_u[adjNodes[0], candidate], 2)-(pow(loc2[0], 2)-pow(loc0[0], 2))-(pow(loc2[1], 2)-pow(loc0[1], 2))])
 
-        tempResult = np.matmul(np.linalg.inv(np.matmul(A.transpose(), A)), A.transpose())
+
+        tempResult = np.matmul(matrixInverse(np.matmul(A.transpose(), A)), A.transpose())
         result = np.matmul(tempResult, L)
 
-        return result.transpose()
+        return result
 
 def pick_next_node(S, U, D_u):
     def _get_candidate(candidate_list, D_mask):
@@ -506,27 +513,28 @@ def pick_next_node(S, U, D_u):
         
         return candidate
     
-    elif len(S) >= 2:
+    elif len(S) == 2:
         candidate_list = []
         for i in U:
             if np.intersect1d(np.nonzero(D_u[i])[0], S).shape[0] >= 2:
                 candidate_list.append(i)
         
         candidate = _get_candidate(candidate_list, D_mask)
-        # candidate_list = np.intersect1d(np.nonzero(D_u[S[0]])[0], np.nonzero(D_u[S[1]])[0])
-        # candidate_list = np.intersect1d(candidate_list, U)
-        # candidate = _get_candidate(candidate_list, D_mask)
 
         return candidate
 
-    # else: # len(S) greater than 3
-    #     candidate_list = []
-    #     for i in U:
-    #         if np.intersect1d(np.nonzero(D_u[i])[0], S).shape[0] >= 3:
-    #             candidate_list.append(i)
-    #     
-    #     candidate = _get_candidate(candidate_list, D_mask)
-    #     return candidate
+    else: # len(S) greater than 3
+        candidate_list = []
+        for i in U:
+            if np.intersect1d(np.nonzero(D_u[i])[0], S).shape[0] >= 3:
+                candidate_list.append(i)
+
+        if (len(candidate_list) == 0): # fall back to bilateration ordering
+            for i in U:
+                if np.intersect1d(np.nonzero(D_u[i])[0], S).shape[0] >= 2:
+	                candidate_list.append(i)
+        candidate = _get_candidate(candidate_list, D_mask)
+        return candidate
 
 def euclidean_dist(pos_a, pos_b):
     return math.dist(pos_a, pos_b)
@@ -598,6 +606,31 @@ def mds_relative_to_absolute_scale(estimated_coordinates, indices_of_anchors, an
 
     return np.transpose(estimated_coord_mds)
 
+def construct_edges(node_num, p2p_graph, dist_matrix, num_edges):
+    link_edges = defaultdict(dict)
+    edge_no = 0
+    
+    labels = {}
+    comm_edges_list = []
+
+    for node_u in range(node_num):
+        for node_v in range(node_u+1, node_num):
+            if p2p_graph[node_u][node_v] == 1:
+                link_edges[edge_no] = {'u':node_u, 'v':node_v, 'dist':dist_matrix[node_u][node_v]}
+                edge_no += 1               
+
+    assert (edge_no == num_edges)
+    
+    for edge_no in range(int(num_edges)):
+        node_u = link_edges[edge_no]['u']
+        node_v = link_edges[edge_no]['v']
+        dist = link_edges[edge_no]['dist']
+    
+        comm_edges_list.append([node_u, node_v])
+        labels[tuple([node_u, node_v])] = edge_no
+    
+    return link_edges, comm_edges_list, labels
+
 def applyMDS(completeEDM):
     mds = MDS(n_components=2,
               max_iter=3000,
@@ -612,9 +645,11 @@ def applyMDS(completeEDM):
 if __name__ == '__main__':
     if (sys.argv[1] == '--idSets'):
         nodes_pos = np.array(json.loads(sys.argv[2]))
-        node_num = nodes_pos.shape[1]
-        loc_pos = LocMap(nodes_pos)
-        loc_pos.BFS(random.randint(0, node_num))
+        node_num = nodes_pos.shape[0]
+        loc_pos = LocMap(nodes_pos, K=4)
+        # loc_pos.BFS(random.randint(0, node_num))
+        loc_pos.BFS(0)
+        loc_pos.trilateration_ordering_check()
 
         p2p_graph = loc_pos.get_graph()
         dist_matrix = loc_pos.get_dist_matrix()
@@ -641,11 +676,15 @@ if __name__ == '__main__':
 
         D = recon.EDM_Completion(0.8, 0.05)
 
-        mds = applyMDS(D)
+        # mds = applyMDS(D)
+        
+        locs = recon.Get_nodes_loc()
 
-        estimated_pos = mds_relative_to_absolute_scale(mds, anchor_nodes_idx, anchor_nodes_pos)
+        estimated_pos = mds_relative_to_absolute_scale(locs, anchor_nodes_idx, anchor_nodes_pos)
+        # print ("estimate_pos: \n{}".format(estimated_pos), file=sys.stderr)
 
         for row in estimated_pos:
+            # print (" ".join("{:.2f}".format(x) for x in row), file=sys.stderr)
             print (" ".join(str(x) for x in row))
 
     else:
