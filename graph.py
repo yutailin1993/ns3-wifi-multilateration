@@ -8,8 +8,6 @@ from collections import defaultdict
 
 from sklearn.manifold import MDS
 
-num_nodes = 12
-
 
 class LocMap:
     def __init__(self, nodes_pos, K=3):
@@ -92,10 +90,7 @@ class LocMap:
             if np.intersect1d(np.nonzero(self.graph[i])[0], S).shape[0] >= 2:
                 add_list.append(i)
         
-        if len(add_list) == 0:
-            for i in U:
-                if np.intersect1d(np.nonzero(self.graph[i])[0], S).shape[0] >= 1:
-                    add_list.append(i)
+        assert (len(add_list) > 0)
 
         candidate = _get_candidate(add_list, graph_mask)
         add_cand = -1
@@ -116,6 +111,8 @@ class LocMap:
             candidate = pick_next_node(S, U, self.graph)
             if candidate == -1:
                 self.make_trilateration_ordering(S, U)
+                U = [i for i in range(self.nodes_num)]
+                S = []
                 continue
                 
             S.append(candidate)
@@ -123,6 +120,51 @@ class LocMap:
         
         return S
 
+    def HennenburgConstruction(self, s):
+        U = [x for x in range(self.nodes_num)]
+        S = []
+        S.append(s)
+        U.remove(s)
+
+        n = np.argsort(self.dist_matrix[s])[1]
+        S.append(n)
+        U.remove(n)
+
+        self._add_edge(S[0], S[1])
+
+        while (U):
+            min_dist = sys.float_info.max
+            u1 = -1; s1 = -1; s2 = -1
+            for i in U:
+                i_list = np.argsort(self.dist_matrix[i])
+                K = []
+                for j in i_list:
+                    if j in S:
+                        K.append(j)
+                    if (len(K) == 2):
+                        break
+
+                if self.dist_matrix[i][K[0]] + self.dist_matrix[i][K[1]] < min_dist:
+                    u1 = i; s1 = K[0]; s2 = K[1]
+
+            assert(u1 >= 0 and s1 >= 0 and s2 >= 0)
+            self._add_edge(u1, s1)
+            self._add_edge(u1, s2)
+            U.remove(u1)
+            S.append(u1)
+
+    def ConstructEdgesK(self):
+        for i in range(self.nodes_num):
+            if np.count_nonzero(self.graph) < self.K:
+                diff = self.K - np.count_nonzero(self.graph)
+                assert (diff > 0)
+                dist_list = np.argsort(self.dist_matrix[i])
+                for j in dist_list:
+                    if self.graph[i][j] == 0 and i != j:
+                        self._add_edge(i, j)
+                        diff -= 1
+                    if diff == 0:
+                        break
     
     def BFS(self, s):
         visited = [False] * (self.nodes_num)
@@ -353,11 +395,8 @@ class DistMatrixReconstruction:
                 nodes_loc[candidate] = self.bilateration(S, candidate, nodes_loc)
             else: # greater or equal to 3 nodes
                 adjList = np.intersect1d(S, np.nonzero(self.D_u[candidate])[0])
-                assert(adjList.shape[0] >= 2)
-                if (adjList.shape[0] == 2):
-                    nodes_loc[candidate] = self.bilateration(adjList, candidate, nodes_loc)
-                else:
-                    nodes_loc[candidate] = self.tri_lateration(np.random.choice(adjList, 3, replace=False), candidate, nodes_loc)
+                assert(adjList.shape[0] >= 3)
+                nodes_loc[candidate] = self.tri_lateration(np.random.choice(adjList, 3, replace=False), candidate, nodes_loc)
 
             U.remove(candidate)
             S.append(candidate)
@@ -401,22 +440,24 @@ class DistMatrixReconstruction:
         rmse = np.sqrt(np.mean((A-B)**2))
         return rmse
 
-    def EDM_Completion(self, stop_condition, gradient_ratio):
+    def EDM_Completion(self, stop_condition, gradient_ratio, stop_itrr):
         candidate_nodes_loc = np.zeros((self.nodes_num, self.nodes_num))
-        candidate_rmse_D = 100000000
+        candidate_rmse_D = sys.float_info.max
         for _ in range(50):
             temp_nodes_loc = self.sequential_multilateration()
             temp_D, temp_D_cur = self.generate_distance_matrices(temp_nodes_loc)
             if candidate_rmse_D >= self.rmse(temp_D, temp_D_cur):
                 candidate_nodes_loc = temp_nodes_loc
                 candidate_rmse_D = self.rmse(temp_D, temp_D_cur)
+        assert (np.allclose(temp_D, temp_D.T, rtol=10e-5, atol=10e-5))
+        assert (np.allclose(temp_D_cur, temp_D_cur.T, rtol=10e-5, atol=10e-5))
 
         self.nodes_loc = candidate_nodes_loc
         D, D_cur = self.generate_distance_matrices(self.nodes_loc)
 
         cnt = 0
 
-        while (self.rmse(D, D_cur) >= stop_condition and cnt <= 500):
+        while (self.rmse(D, D_cur) >= stop_condition and cnt <= stop_itrr):
             # print ("cnt: {}, Curr rmse: {}".format(cnt, self.rmse(D, D_cur)), file=sys.stderr)
             delta_D = D - D_cur
             for i in range(self.nodes_num):
@@ -529,10 +570,10 @@ def pick_next_node(S, U, D_u):
             if np.intersect1d(np.nonzero(D_u[i])[0], S).shape[0] >= 3:
                 candidate_list.append(i)
 
-        if (len(candidate_list) == 0): # fall back to bilateration ordering
-            for i in U:
-                if np.intersect1d(np.nonzero(D_u[i])[0], S).shape[0] >= 2:
-	                candidate_list.append(i)
+        # if (len(candidate_list) == 0): # fall back to bilateration ordering
+        #     for i in U:
+        #         if np.intersect1d(np.nonzero(D_u[i])[0], S).shape[0] >= 2:
+	    #          candidate_list.append(i)
         candidate = _get_candidate(candidate_list, D_mask)
         return candidate
 
@@ -674,7 +715,7 @@ if __name__ == '__main__':
 
         recon = DistMatrixReconstruction(measured_dist_matrix, measured_dist_matrix.shape[0])
 
-        D = recon.EDM_Completion(0.8, 0.05)
+        D = recon.EDM_Completion(1.0, 0.02, 3000)
 
         # mds = applyMDS(D)
         
