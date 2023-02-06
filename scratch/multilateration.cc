@@ -188,7 +188,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 {
 	// PositionList staPosList(glob_staPosList.begin(), glob_staPosList.begin()+in_envConf.nSTAs);
 
-	double alpha = 0.1;
+	double alpha = 0.2;
 
 	RngSeedManager::SetSeed(in_seed);
 	RngSeedManager::SetRun(in_seed);
@@ -311,7 +311,7 @@ main(int argc, char *argv[])
 	// LogComponentEnable("VhtFrameExchangeManager", LOG_LEVEL_DEBUG);
 	// LogComponentEnable("FtmSession", LOG_LEVEL_ERROR);
 
-	const double simulationTime = 1.5;
+	const double simulationTime = 2.0;
 
 	
 	std::cout << "begin simulation" << std::endl;
@@ -319,7 +319,7 @@ main(int argc, char *argv[])
 	// size_t staPerAP = 10;
 	int bps = 2;
   
-	for (size_t staPerAP=10; staPerAP<60; staPerAP+=10) {
+	for (size_t staPerAP=20; staPerAP<30; staPerAP+=10) {
 		std::cout << "# STA: " << staPerAP*3 << ", With CS " << std::endl;
 		std::vector<std::tuple<double, double, double, double, double, int>> resultsList;
 		
@@ -327,7 +327,7 @@ main(int argc, char *argv[])
 			3, // nAPs
 			3*staPerAP, // nSTAs
 			4, // mcs
-			40 // channelWidth
+			80 // channelWidth
 		};
 		UdpConfig udpConf = {
 			1500, // payloadSize
@@ -337,33 +337,32 @@ main(int argc, char *argv[])
 		for (int simNum=1; simNum<11; simNum++) {
 			std::cout << "Simulation: " << simNum << std::endl;
 			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRELESS_ERROR, envConf, udpConf, simulationTime));
-		}
-
-		std::cout << "PacketLossRate" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<3>(tupItr) << "," << std::endl;
-		}
-		std::cout << "FtmDialogLossRate" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<4>(tupItr) << "," << std::endl;
-		}
+			std::cout << "PacketLossRate" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<3>(tupItr) << "," << std::endl;
+			}
+			std::cout << "FtmDialogLossRate" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<4>(tupItr) << "," << std::endl;
+			}
 		
-		std::cout << "TotalThroughput" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<0>(tupItr) << "," << std::endl;
-		}
-		std::cout << "AvgThroughput" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<1>(tupItr) << "," << std::endl;
-		}
-		std::cout << "DistErr" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<2>(tupItr) << "," << std::endl;
-		}
+			std::cout << "TotalThroughput" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<0>(tupItr) << "," << std::endl;
+			}
+			std::cout << "AvgThroughput" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<1>(tupItr) << "," << std::endl;
+			}
+			std::cout << "DistErr" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<2>(tupItr) << "," << std::endl;
+			}
 
-		std::cout << "Loss STA count" << std::endl;
-		for (auto &tupItr : resultsList) {
-			std::cout << std::get<5>(tupItr) << "," << std::endl; 
+			std::cout << "Loss STA count" << std::endl;
+			for (auto &tupItr : resultsList) {
+				std::cout << std::get<5>(tupItr) << "," << std::endl; 
+			}
 		}
 
 	}

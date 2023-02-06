@@ -156,7 +156,7 @@ WifiEnvironment::SetupMobility()
 	m_staPosAlloc = 
 		CreateObjectWithAttributes<RandomDiscPositionAllocator> ("X", StringValue("0"),
 																														 "Y", StringValue("0"),
-																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=20]"));
+																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=70]"));
 	m_mobility.SetPositionAllocator(m_staPosAlloc);
 	m_mobility.Install(m_wifiStaNodes);
 	
