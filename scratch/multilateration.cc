@@ -336,7 +336,7 @@ main(int argc, char *argv[])
 
 		for (int simNum=1; simNum<11; simNum++) {
 			std::cout << "Simulation: " << simNum << std::endl;
-			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRELESS_ERROR, envConf, udpConf, simulationTime));
+			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRED_ERROR, envConf, udpConf, simulationTime));
 			std::cout << "PacketLossRate" << std::endl;
 			for (auto &tupItr : resultsList) {
 				std::cout << std::get<3>(tupItr) << "," << std::endl;

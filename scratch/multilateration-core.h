@@ -157,7 +157,9 @@ class Multilateration
 		Multilateration(EModel e, int channelWidth) {
 			m_errorModel = e;
 			m_channelWidth = channelWidth;
-			m_ftmMap = LoadWirelessErrorMap();
+			if (m_errorModel == EModel::WIRELESS_ERROR) {
+				m_ftmMap = LoadWirelessErrorMap();
+			}
 		};
 
 		virtual ~Multilateration();
