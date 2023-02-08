@@ -1519,7 +1519,7 @@ WifiMac::EnableFtm (void)
 {
   NS_LOG_FUNCTION (this);
 
-  m_ftm_manager = CreateObject<FtmManager> (GetWifiPhy(), GetTxop());
+  m_ftm_manager = CreateObject<FtmManager> (GetWifiPhy(), GetTxop(), m_phy->GetChannelWidth());
   m_ftm_manager->SetMacAddress(GetAddress());
   Time::Unit resolution = Time::GetResolution();
 

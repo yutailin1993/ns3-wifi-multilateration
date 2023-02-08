@@ -86,22 +86,34 @@ class LocMap:
             graph_mask[:, i] = 0
             graph_mask[i, :] = 0
 
+        add_edge_cnt = 0
         for i in U:
             if np.intersect1d(np.nonzero(self.graph[i])[0], S).shape[0] >= 2:
                 add_list.append(i)
         
-        assert (len(add_list) > 0)
+        add_edge_cnt += 1
+        if len(add_list) == 0:
+            if len(S) > 2:
+                add_edge_cnt += 1
+            for i in U:
+                if np.intersect1d(np.nonzero(self.graph[i])[0], S).shape[0] >= 1:
+                    add_list.append(i)
+
+        assert(len(add_list) > 0)
 
         candidate = _get_candidate(add_list, graph_mask)
-        add_cand = -1
-        _min = 1000
-        for i in S:
-            if (self.dist_matrix[candidate, i] < _min and self.graph[candidate, i] == 0):
-                add_cand = i
-                _min = self.dist_matrix[candidate, i]
-        
-        # print ("candidate: {}, add_candidate: {}".format(candidate, add_cand), file=sys.stderr)
-        self._add_edge(candidate, add_cand)
+        S_cpy = S.copy()
+        for _ in range(add_edge_cnt):
+            add_cand = -1
+            _min = sys.float_info.max
+            for i in S_cpy:
+                if (self.dist_matrix[candidate, i] < _min and self.graph[candidate, i] == 0):
+                    add_cand = i
+                    _min = self.dist_matrix[candidate, i]
+
+            S_cpy.remove(add_cand)
+            # print ("candidate: {}, add_candidate: {}".format(candidate, add_cand), file=sys.stderr)
+            self._add_edge(candidate, add_cand)
 
     def trilateration_ordering_check(self):
         S = []
@@ -208,25 +220,37 @@ class LocMap:
 
 
 class ConflictGraph:
-    def __init__(self, node_num, nodes_pos, dist_matrix, p2p_graph, link_edges):
+    def __init__(self, node_num, nodes_pos, dist_matrix, p2p_graph, link_edges, channel_bandwidth):
         self.nodes_pos = nodes_pos
         self.node_num = node_num
+        self.channel_bandwidth = channel_bandwidth
         self.dist_matrix = dist_matrix
         self.p2p_graph = p2p_graph
         self.num_edges = int(np.count_nonzero(p2p_graph == 1) / 2)
         self.conflict_map = np.zeros((self.num_edges, self.num_edges), dtype=np.int8)
         self.link_edges = link_edges
         self.independent_sets = defaultdict(list)
+
+        self.txPower_const = 5.43*pow(10,-6)
+        if self.channel_bandwidth == 20:
+            self.rssi_threshold = -70
+        elif self.channel_bandwidth == 40:
+            self.rssi_threshold = -67
+        elif self.channel_bandwidth == 80:
+            self.rssi_threshold = -64
+        else:
+            raise ValueError("Bandwidth not implemented: {}".format(self.channel_bandwidth))
     
     def construct_conflict_graph(self):
         def get_nodes_in_range(node_u, node_v, dist):
             conflict_nodes = set()
+            conflict_dist = math.sqrt(self.txPower_const/pow(10,(self.rssi_threshold-30)/10))
             
             for node in range(self.node_num):
                 if node == node_u or node == node_v:
                     continue
                 
-                if self.dist_matrix[node][node_u] <= dist or self.dist_matrix[node][node_v] <= dist:
+                if self.dist_matrix[node][node_u] <= conflict_dist or self.dist_matrix[node][node_v] <= conflict_dist:
                     conflict_nodes.add(node)
             return conflict_nodes
         
@@ -396,7 +420,12 @@ class DistMatrixReconstruction:
             else: # greater or equal to 3 nodes
                 adjList = np.intersect1d(S, np.nonzero(self.D_u[candidate])[0])
                 assert(adjList.shape[0] >= 3)
-                nodes_loc[candidate] = self.tri_lateration(np.random.choice(adjList, 3, replace=False), candidate, nodes_loc)
+                temp_nodes_loc = np.zeros(2)
+                min_offset = sys.float_info.max
+                for _ in range(3, len(adjList)+1):
+                    temp_nodes_loc += self.tri_lateration(np.random.choice(adjList, 3, replace=False), candidate, nodes_loc)
+                temp_nodes_loc /= (len(adjList)-3+1)
+                nodes_loc[candidate] = temp_nodes_loc
 
             U.remove(candidate)
             S.append(candidate)
@@ -426,47 +455,41 @@ class DistMatrixReconstruction:
         
         return D, D_cur
 
-    def update_location(self, i, j, d, gradient_ratio):
-        if self.nodes_loc[j][0] == self.nodes_loc[i][0]:
-            sign = np.sign(self.nodes_loc[j][1] - self.nodes_loc[i][1])
-            self.nodes_loc[j][1] += sign*gradient_ratio*d
+    def update_location(self, i, j, d, gradient_ratio, nodes_loc):
+        if nodes_loc[j][0] == nodes_loc[i][0]:
+            sign = np.sign(nodes_loc[j][1] - nodes_loc[i][1])
+            nodes_loc[j][1] += sign*gradient_ratio*d
         else:
-            slope_r = (self.nodes_loc[j][1] - self.nodes_loc[i][1]) / (self.nodes_loc[j][0] - self.nodes_loc[i][0])
-            sign = np.sign(self.nodes_loc[j][0] - self.nodes_loc[i][0])
-            self.nodes_loc[j][0] += sign*gradient_ratio*d/math.sqrt(1+pow(slope_r, 2))
-            self.nodes_loc[j][1] += sign*gradient_ratio*d*slope_r/math.sqrt(1+pow(slope_r, 2))
-
-    def rmse(self, A, B):
-        rmse = np.sqrt(np.mean((A-B)**2))
-        return rmse
+            slope_r = (nodes_loc[j][1] - nodes_loc[i][1]) / (nodes_loc[j][0] - nodes_loc[i][0])
+            sign = np.sign(nodes_loc[j][0] - nodes_loc[i][0])
+            nodes_loc[j][0] += sign*gradient_ratio*d/math.sqrt(1+pow(slope_r, 2))
+            nodes_loc[j][1] += sign*gradient_ratio*d*slope_r/math.sqrt(1+pow(slope_r, 2))
 
     def EDM_Completion(self, stop_condition, gradient_ratio, stop_itrr):
-        candidate_nodes_loc = np.zeros((self.nodes_num, self.nodes_num))
+        candidate_nodes_loc = np.zeros((self.nodes_num, 2))
         candidate_rmse_D = sys.float_info.max
-        for _ in range(50):
+        for _ in range(30):
             temp_nodes_loc = self.sequential_multilateration()
             temp_D, temp_D_cur = self.generate_distance_matrices(temp_nodes_loc)
-            if candidate_rmse_D >= self.rmse(temp_D, temp_D_cur):
-                candidate_nodes_loc = temp_nodes_loc
-                candidate_rmse_D = self.rmse(temp_D, temp_D_cur)
-        assert (np.allclose(temp_D, temp_D.T, rtol=10e-5, atol=10e-5))
-        assert (np.allclose(temp_D_cur, temp_D_cur.T, rtol=10e-5, atol=10e-5))
 
+            cnt = 0
+
+            while (rmse(temp_D, temp_D_cur) >= stop_condition and cnt <=stop_itrr):
+                temp_delta_D = temp_D - temp_D_cur
+                for i in range(self.nodes_num):
+                    for j in range(i+1, self.nodes_num):
+                        self.update_location(i, j, temp_delta_D[i, j], gradient_ratio, temp_nodes_loc)
+                
+                temp_D, temp_D_cur = self.generate_distance_matrices(temp_nodes_loc)
+                cnt += 1
+
+            # print ("candidate_rmse_D: {}, Curr rmse: {}".format(candidate_rmse_D, rmse(temp_D, temp_D_cur)), file=sys.stderr)
+            if candidate_rmse_D >= rmse(temp_D, temp_D_cur):
+                candidate_nodes_loc = temp_nodes_loc
+                candidate_rmse_D = rmse(temp_D, temp_D_cur)
+        
         self.nodes_loc = candidate_nodes_loc
         D, D_cur = self.generate_distance_matrices(self.nodes_loc)
-
-        cnt = 0
-
-        while (self.rmse(D, D_cur) >= stop_condition and cnt <= stop_itrr):
-            # print ("cnt: {}, Curr rmse: {}".format(cnt, self.rmse(D, D_cur)), file=sys.stderr)
-            delta_D = D - D_cur
-            for i in range(self.nodes_num):
-                for j in range(i+1, self.nodes_num):
-                    self.update_location(i, j, delta_D[i, j], gradient_ratio)
-            
-            D, D_cur = self.generate_distance_matrices(self.nodes_loc)
-            cnt += 1
-
         return D
 
     def Get_nodes_loc(self):
@@ -503,14 +526,14 @@ class DistMatrixReconstruction:
                                   nodes_loc[adjNodes[1]], self.D_u[adjNodes[1], candidate])
     
     def tri_lateration(self, adjNodes, candidate, nodes_loc):
-        def matrixInverse(inputM):
-            e0 = inputM[0, 0]
-            e1 = inputM[0, 1]
-            e2 = inputM[1, 0]
-            e3 = inputM[1, 1]
-            m = 1.0 / (e0*e3 - e1*e2)
-            matrix = np.array([[m*e3, m*(-e1)], [m*(-e2), m*e0]])
-            return matrix
+        # def matrixInverse(inputM):
+        #     e0 = inputM[0, 0]
+        #     e1 = inputM[0, 1]
+        #     e2 = inputM[1, 0]
+        #     e3 = inputM[1, 1]
+        #     m = 1.0 / (e0*e3 - e1*e2)
+        #     matrix = np.array([[m*e3, m*(-e1)], [m*(-e2), m*e0]])
+        #     return matrix
 
         loc0 = nodes_loc[adjNodes[0]]
         loc1 = nodes_loc[adjNodes[1]]
@@ -523,7 +546,7 @@ class DistMatrixReconstruction:
                       pow(self.D_u[adjNodes[2], candidate], 2)-pow(self.D_u[adjNodes[0], candidate], 2)-(pow(loc2[0], 2)-pow(loc0[0], 2))-(pow(loc2[1], 2)-pow(loc0[1], 2))])
 
 
-        tempResult = np.matmul(matrixInverse(np.matmul(A.transpose(), A)), A.transpose())
+        tempResult = np.matmul(np.linalg.inv(np.matmul(A.transpose(), A)), A.transpose())
         result = np.matmul(tempResult, L)
 
         return result
@@ -683,21 +706,30 @@ def applyMDS(completeEDM):
 
     return node_locations
 
+def rmse(A, B):
+    rmse = np.sqrt(np.mean((A-B)**2))
+    return rmse
+
 if __name__ == '__main__':
     if (sys.argv[1] == '--idSets'):
         nodes_pos = np.array(json.loads(sys.argv[2]))
+
+        # np.savetxt('node_pos.csv', nodes_pos, delimiter=',')
+        channel_bandwidth = int(sys.argv[3])
         node_num = nodes_pos.shape[0]
         loc_pos = LocMap(nodes_pos, K=4)
-        # loc_pos.BFS(random.randint(0, node_num))
-        loc_pos.BFS(0)
+        loc_pos.HennenburgConstruction(random.randint(0, node_num-1))
+        loc_pos.ConstructEdgesK()
         loc_pos.trilateration_ordering_check()
 
         p2p_graph = loc_pos.get_graph()
         dist_matrix = loc_pos.get_dist_matrix()
 
+        # np.savetxt('dist_matrix.csv', dist_matrix, delimiter=',')
+
         link_edges, comm_edges_list, labels = construct_edges(node_num, p2p_graph, dist_matrix, np.count_nonzero(p2p_graph == 1)/2)
 
-        conf_graph_obj = ConflictGraph(node_num, nodes_pos, dist_matrix, p2p_graph, link_edges)
+        conf_graph_obj = ConflictGraph(node_num, nodes_pos, dist_matrix, p2p_graph, link_edges, channel_bandwidth)
         conf_graph_obj.construct_conflict_graph()
         conf_graph_obj.construct_independent_sets_by_edges()
         
@@ -710,18 +742,25 @@ if __name__ == '__main__':
         measured_dist_matrix = np.array(json.loads(sys.argv[2]))
         anchor_nodes_pos = np.array(json.loads(sys.argv[3]))
         anchor_nodes_idx = np.array(json.loads(sys.argv[4]))
+        # active_EDM = np.array(json.loads(sys.argv[5]))
+        # passive_EDM = np.array(json.loads(sys.argv[6]))
+
+        # assert (np.allclose(active_EDM, active_EDM.T, rtol=10e-5, atol=10e-5))
+        # assert (np.allclose(passive_EDM, passive_EDM.T, rtol=10e-5, atol=10e-5))
+
+        # np.savetxt('measured_dist_matrix.csv', measured_dist_matrix, delimiter=',')
+        # np.savetxt('active_EDM.csv', active_EDM, delimiter=',')
+        # np.savetxt('passive_EDM.csv', passive_EDM, delimiter=',')
 
         assert (measured_dist_matrix.shape[0] == measured_dist_matrix.shape[1])
 
         recon = DistMatrixReconstruction(measured_dist_matrix, measured_dist_matrix.shape[0])
 
-        D = recon.EDM_Completion(1.0, 0.02, 3000)
+        D = recon.EDM_Completion(1, 0.05, 500)
 
-        # mds = applyMDS(D)
+        mds = applyMDS(D)
         
-        locs = recon.Get_nodes_loc()
-
-        estimated_pos = mds_relative_to_absolute_scale(locs, anchor_nodes_idx, anchor_nodes_pos)
+        estimated_pos = mds_relative_to_absolute_scale(mds, anchor_nodes_idx, anchor_nodes_pos)
         # print ("estimate_pos: \n{}".format(estimated_pos), file=sys.stderr)
 
         for row in estimated_pos:

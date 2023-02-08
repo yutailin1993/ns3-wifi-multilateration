@@ -58,7 +58,7 @@ public:
    * \param phy the WifiPhy
    * \param txop the Txop
    */
-  FtmManager (Ptr<WifiPhy> phy, Ptr<Txop> txop);
+  FtmManager (Ptr<WifiPhy> phy, Ptr<Txop> txop, uint16_t channelWidth);
   virtual
   ~FtmManager ();
 
@@ -202,6 +202,10 @@ private:
   unsigned int sent_packets; //!< How many packets have been sent, after receiving FTM frame.
   bool sending_ack; //!< Next packet should be ack.
   Mac48Address m_ack_to; //!< Who the ack should go to.
+  uint16_t m_channelWidth;
+  double m_txPowerConst;
+  int m_rssiThreshold;
+
 
   Ptr<Txop> m_txop; //!< The Txop.
 

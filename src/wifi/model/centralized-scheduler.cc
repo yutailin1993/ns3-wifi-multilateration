@@ -191,14 +191,6 @@ CentralizedScheduler::ScheduleNextTransmission()
 			NS_LOG_DEBUG("Transmission end dequeue, {mQ_size, dQ_size, fQ_size, bQ_size}={" <<
 						 				 m_mgtOtherQueue.size() << "," << m_dataTxopQueue.size() << "," << 
 						 				 m_ftmTxopQueue.size() << "," << m_broadcastQueue.size() << "}, time: " << Simulator::Now());
-			if (m_currTransType == TransmissionType::FTM) {
-				Ptr<WifiMacQueue> macQueue = txop->GetWifiMacQueue();
-				WifiMacHeader hdr = macQueue->Peek()->GetItem()->GetHeader();
-				Ptr<Packet> packet = macQueue->Peek()->GetItem()->GetPacket()->Copy();
-				WifiActionHeader action_hdr;
-				packet->RemoveHeader(action_hdr);
-				WifiActionHeader::ActionValue action = action_hdr.GetAction();
-			}
 			Simulator::ScheduleNow(&Txop::CSRequestAccess, txop);
 			IncreaseScheduleTransCounter();
 		}

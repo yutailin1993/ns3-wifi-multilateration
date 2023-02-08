@@ -22,6 +22,8 @@
 #include "ns3/core-module.h"
 #include "ns3/wifi-mac-header.h"
 
+#include <math.h>
+
 
 namespace ns3 {
 
@@ -48,7 +50,7 @@ FtmManager::FtmManager ()
   sending_ack = false;
 }
 
-FtmManager::FtmManager (Ptr<WifiPhy> phy, Ptr<Txop> txop)
+FtmManager::FtmManager (Ptr<WifiPhy> phy, Ptr<Txop> txop, uint16_t channelWidth)
 {
   received_packets = 0;
   awaiting_ack = false;
@@ -57,6 +59,18 @@ FtmManager::FtmManager (Ptr<WifiPhy> phy, Ptr<Txop> txop)
   phy->TraceConnectWithoutContext("PhyTxBegin", MakeCallback(&FtmManager::PhyTxBegin, this));
   phy->TraceConnectWithoutContext("PhyRxBegin", MakeCallback(&FtmManager::PhyRxBegin, this));
   m_txop = txop;
+  m_channelWidth = channelWidth;
+  m_txPowerConst = 5.43*pow(10,-6);
+
+  if (m_channelWidth == 20) {
+    m_rssiThreshold = -70;
+  } else if (m_channelWidth == 40) {
+    m_rssiThreshold = -67;
+  } else if (m_channelWidth == 80) {
+    m_rssiThreshold = -64;
+  } else {
+    NS_FATAL_ERROR("Current FTM implementation not support for channel width " << m_channelWidth << " MHz!!");
+  }
 
   m_preamble_detection_duration = phy->GetPreambleDetectionDuration();
 }
@@ -264,7 +278,7 @@ FtmManager::FindPassiveSession (Mac48Address addr)
 void
 FtmManager::PassiveFTM (Mac48Address peer_addr, uint64_t timestamp)
 {
-  double distance = FindDistance(peer_addr);
+  double distance = sqrt(m_txPowerConst/pow(10,(m_rssiThreshold-30)/10));
   std::map<Mac48Address, double>::iterator it;
   for (it = m_peerDistance.begin(); it != m_peerDistance.end(); it++) {
     if (it->second <= distance) {
