@@ -687,7 +687,7 @@ main(int argc, char *argv[])
 	// LogComponentEnable("FtmSession", LOG_LEVEL_ERROR);
 	// LogComponentEnable("WifiMacQueue", LOG_LEVEL_DEBUG);
 
-	const double simulationTime = 1.5;
+	const double simulationTime = 4.0;
 
 	
 	std::cout << "begin simulation" << std::endl;
@@ -704,15 +704,15 @@ main(int argc, char *argv[])
 			3*staPerAP, // nSTAs
 			4, // mcs
 			80, // channelWidth
-			0.3 // alpha
+			0.2 // alpha
 		};
 		UdpConfig udpConf = {
 			1500, // payloadSize
 			"0.0012" // udpInterval
 		};
 
-		for (int simNum=8; simNum<11; simNum++) {
-			std::cout << "Simulation: " << simNum << std::endl;
+		for (int simNum=1; simNum<21; simNum++) {
+			std::cout << "Simulation: " << simNum << ", alpha: " << envConf.alpha << std::endl;
 			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRED_ERROR, envConf, udpConf, simulationTime));
 			
 			std::cout << "Packet Loss Rate" << std::endl;
