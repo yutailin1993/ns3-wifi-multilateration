@@ -252,6 +252,16 @@ WifiPhy::GetTypeId (void)
                      "has begun transmitting over the channel medium",
                      MakeTraceSourceAccessor (&WifiPhy::m_phyTxBeginTrace),
                      "ns3::WifiPhy::PhyTxBeginTracedCallback")
+    .AddTraceSource ("PhyFtmTxBegin",
+                     "Trace source indicating a FTM packet "
+                     "has begun transmitting over the channel medium",
+                     MakeTraceSourceAccessor (&WifiPhy::m_phyFtmTxBeginTrace),
+                     "ns3::WifiPhy::PhyFtmTxBeginTracedCallback")
+    .AddTraceSource ("PhyFtmRxBegin",
+                     "Trace source indicating a FTM packet "
+                     "has begun transmitting over the channel medium",
+                     MakeTraceSourceAccessor (&WifiPhy::m_phyFtmRxBeginTrace),
+                     "ns3::WifiPhy::PhyFtmRxBeginTracedCallback")
     .AddTraceSource ("PhyTxPsduBegin",
                      "Trace source indicating a PSDU "
                      "has begun transmitting over the channel medium",
@@ -1342,6 +1352,22 @@ WifiPhy::NotifyTxBegin (WifiConstPsduMap psdus, double txPowerW)
             }
         }
     }
+  if (!m_phyFtmTxBeginTrace.IsEmpty ())
+    {
+      for (auto const& psdu : psdus)
+        {
+          for (auto& mpdu : *PeekPointer (psdu.second))
+            {
+              m_phyFtmTxBeginTrace (mpdu->GetProtocolDataUnit ());
+              Time now = Simulator::Now();
+              int64_t pico_sec = now.GetPicoSeconds();
+              pico_sec &= 0x0000FFFFFFFFFFFF;
+              mpdu->SetFtmTod(pico_sec);
+
+              NS_LOG_DEBUG("TOD: " << mpdu->GetFtmTod());
+            }
+        }
+    }
 }
 
 void
@@ -1379,6 +1405,14 @@ WifiPhy::NotifyRxBegin (Ptr<const WifiPsdu> psdu, const RxPowerWattPerChannelBan
       for (auto& mpdu : *PeekPointer (psdu))
         {
           m_phyRxBeginTrace (mpdu->GetProtocolDataUnit (), rxPowersW);
+        }
+    }
+  if (psdu && !m_phyFtmRxBeginTrace.IsEmpty ())
+    {
+      for (auto& mpdu : *PeekPointer (psdu))
+        {
+          uint64_t tod = mpdu->GetFtmTod();
+          m_phyFtmRxBeginTrace (mpdu->GetProtocolDataUnit (), tod);
         }
     }
 }

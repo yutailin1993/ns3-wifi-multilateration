@@ -88,6 +88,9 @@ public:
    */
   WifiMacHeader & GetHeader (void);
 
+  void SetFtmTod (uint64_t tod);
+  const uint64_t GetFtmTod (void);
+
   /**
    * \brief Return the destination address present in the header
    * \return the destination address
@@ -207,6 +210,7 @@ private:
   friend class WifiMacQueue;  // to set queue AC and iterator information
 
   Ptr<const Packet> m_packet;                   //!< The packet (MSDU or A-MSDU) contained in this queue item
+  uint64_t m_ftm_tod;
   WifiMacHeader m_header;                       //!< Wifi MAC header associated with the packet
   Time m_tstamp;                                //!< timestamp when the packet arrived at the queue
   DeaggregatedMsdus m_msduList;                 //!< The list of aggregated MSDUs included in this MPDU

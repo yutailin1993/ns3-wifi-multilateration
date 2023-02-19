@@ -754,6 +754,8 @@ if __name__ == '__main__':
 
         assert (measured_dist_matrix.shape[0] == measured_dist_matrix.shape[1])
 
+        # print (measured_dist_matrix, file=sys.stderr)
+
         recon = DistMatrixReconstruction(measured_dist_matrix, measured_dist_matrix.shape[0])
 
         D = recon.EDM_Completion(1, 0.05, 500)

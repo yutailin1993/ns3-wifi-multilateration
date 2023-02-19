@@ -659,6 +659,30 @@ FtmResponseHeader::GetTimeOfArrival (void)
 }
 
 void
+FtmResponseHeader::SetHeaderT2 (uint64_t t2)
+{
+  m_t2 = t2;
+}
+
+uint64_t
+FtmResponseHeader::GetHeaderT2 (void)
+{
+  return m_t2;
+}
+
+void
+FtmResponseHeader::SetHeaderT3 (uint64_t t3)
+{
+  m_t3 = t3;
+}
+
+uint64_t
+FtmResponseHeader::GetHeaderT3 (void)
+{
+  return m_t3;
+}
+
+void
 FtmResponseHeader::SetTimeOfDepartureError (uint16_t tod_error)
 {
   m_tod_error = tod_error;

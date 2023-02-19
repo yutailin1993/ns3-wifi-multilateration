@@ -660,6 +660,9 @@ public:
    */
   typedef void (* PhyTxBeginTracedCallback)(Ptr<const Packet> packet, double txPowerW);
 
+  typedef void (* PhyFtmTxBeginTracedCallback)(Ptr<const Packet> actual_pkt);
+  typedef void (* PhyFtmRxBeginTracedCallback)(Ptr<const Packet> actual_pkt, uint64_t tod);
+
   /**
    * TracedCallback signature for PSDU transmit events.
    *
@@ -1240,6 +1243,9 @@ private:
    * \see class CallBackTraceSource
    */
   TracedCallback<Ptr<const Packet>, double > m_phyTxBeginTrace;
+
+  TracedCallback<Ptr<const Packet>> m_phyFtmTxBeginTrace;
+  TracedCallback<Ptr<const Packet>, uint64_t> m_phyFtmRxBeginTrace;
   /**
    * The trace source fired when a PSDU map begins the transmission process on
    * the medium.

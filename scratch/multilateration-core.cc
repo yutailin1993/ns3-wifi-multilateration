@@ -42,11 +42,15 @@ SessionOver(FtmSession in_session)
 	size_t sta1_Idx = std::get<0>(connectionPair);
 	size_t sta2_Idx = std::get<1>(connectionPair);
 	double distance = 0;
+
+	if (sta1_Idx == -1) { // skip broadcast sessions
+		return;
+	}
 	
 	if (in_session.GetMeanRTT() == -1) {
 		distance = -1;
 	} else {
-		distance = in_session.GetMeanRTT()*pow(10, -12)*299792458/2;
+		distance = in_session.GetMeanRTT()*pow(10, -12)*299792458;
 	}
 
 	activeDistList.push_back({sta1_Idx, sta2_Idx, distance});
@@ -373,11 +377,11 @@ Multilateration::GenerateWirelessErrorModel(Ptr<WifiNetDevice> in_sta)
 }
 
 Ptr<FtmSession>
-Multilateration::GeneratePassiveFTMSession(std::tuple<size_t, size_t> in_connectionPair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr)
+Multilateration::GenerateDefaultFTMSession(Ptr<WifiNetDevice> in_STA, Address in_recvAddr, bool is_passive)
 {
 	Ptr<WifiMac> staMac = in_STA->GetMac()->GetObject<WifiMac> ();
 	Mac48Address toAddr = Mac48Address::ConvertFrom(in_recvAddr);
-	Ptr<FtmSession> session = staMac->NewFtmSession(toAddr, true);
+	Ptr<FtmSession> session = staMac->NewFtmSession(toAddr, is_passive);
 
 	if (session == 0) {
 		NS_FATAL_ERROR("FTM not enabled!");
@@ -396,6 +400,14 @@ Multilateration::GeneratePassiveFTMSession(std::tuple<size_t, size_t> in_connect
 		default:
 			NS_FATAL_ERROR ("Undefined Error Model!");
 	}
+
+	return session;
+}
+
+Ptr<FtmSession>
+Multilateration::GeneratePassiveFTMSession(std::tuple<size_t, size_t> in_connectionPair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr)
+{
+	Ptr<FtmSession> session = GenerateDefaultFTMSession(in_STA, in_recvAddr, true);
 
 	session->SetSessionBelonging(in_connectionPair);
 	session->SetSessionOverCallback(MakeCallback(&PassiveSessionOver));
@@ -406,27 +418,7 @@ Multilateration::GeneratePassiveFTMSession(std::tuple<size_t, size_t> in_connect
 Ptr<FtmSession>
 Multilateration::GenerateFTMSession(std::tuple<size_t, size_t> in_connectionPair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr)
 {
-	Ptr<WifiMac> staMac = in_STA->GetMac()->GetObject<WifiMac> ();
-	Mac48Address toAddr = Mac48Address::ConvertFrom(in_recvAddr);
-	Ptr<FtmSession> session = staMac->NewFtmSession(toAddr, false);
-
-	if (session == 0) {
-		NS_FATAL_ERROR("FTM not enabled!");
-	}
-
-	switch (m_errorModel) {
-		case EModel::WIRED_ERROR:
-			session->SetFtmErrorModel(GenerateWiredErrorModel());
-			break;
-		case EModel::WIRELESS_ERROR:
-			session->SetFtmErrorModel(GenerateWirelessErrorModel(in_STA));
-			break;
-		case EModel::NO_ERROR:
-			break;
-
-		default:
-			NS_FATAL_ERROR ("Undefined Error Model!");
-	}
+	Ptr<FtmSession> session = GenerateDefaultFTMSession(in_STA, in_recvAddr, false);
 
 	session->SetSessionBelonging(in_connectionPair);
 	session->SetFtmParams(m_ftmParams);
@@ -495,15 +487,28 @@ Multilateration::ConstructIfSessions(std::vector<int> in_anchorSTAs, WifiNetDevi
 	}
 }
 
-void
-Multilateration::ConstructActiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_recvAddrs, std::set<std::vector<int>> in_nodeLinks)
+SessionList
+Multilateration::GetBroadcastSessions ()
 {
-	for (auto &list : in_nodeLinks) {
-		Ptr<WifiNetDevice> sta_1 = in_STAs[list[0]];
-		Ptr<WifiNetDevice> sta_2 = in_STAs[list[1]];
-		Address recvAddr = in_recvAddrs[list[1]];
-		std::tuple<size_t, size_t> connectionPair = {list[1], list[0]};
-		m_sessionList.push_back(GenerateFTMSession(connectionPair, sta_1, recvAddr));
+	return m_broadcastSessionList;
+}
+
+void
+Multilateration::ConstructActiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_recvAddrs)
+{
+	for (size_t i=0; i<in_envConf.nSTAs; i++) {
+		Ptr<WifiNetDevice> sta = in_STAs[i];
+		for (size_t j=0; j<in_envConf.nSTAs; j++) {
+			if (j == i) {
+				continue;
+			}
+			Address recvAddr = in_recvAddrs[j];
+			std::tuple<size_t, size_t> connectionPair = {j, i};
+			m_sessionList.push_back(GenerateFTMSession(connectionPair, sta, recvAddr));
+		}
+		// broadcast session
+		std::tuple<size_t, size_t> connectionPair = {-1, i};
+		m_broadcastSessionList.push_back(GenerateFTMSession(connectionPair, sta, Mac48Address::GetBroadcast()));
 	}
 }
 

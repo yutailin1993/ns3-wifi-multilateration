@@ -120,6 +120,18 @@ WifiMacQueueItem::GetProtocolDataUnit (void) const
 }
 
 void
+WifiMacQueueItem::SetFtmTod (uint64_t tod)
+{
+  m_ftm_tod = tod;
+}
+
+const uint64_t
+WifiMacQueueItem::GetFtmTod (void)
+{
+  return m_ftm_tod;
+}
+
+void
 WifiMacQueueItem::Aggregate (Ptr<const WifiMacQueueItem> msdu)
 {
   NS_ASSERT (msdu != 0);

@@ -444,6 +444,14 @@ public:
    */
   uint64_t GetTimeOfArrival (void);
 
+  void SetHeaderT2 (uint64_t t2);
+
+  uint64_t GetHeaderT2 (void);
+
+  void SetHeaderT3 (uint64_t t3);
+
+  uint64_t GetHeaderT3 (void);
+
   /**
    * Set the time of departure error.
    *
@@ -498,6 +506,8 @@ private:
   uint8_t m_follow_up_dialog_token;
   uint64_t m_tod;
   uint64_t m_toa;
+  uint64_t m_t2;
+  uint64_t m_t3;
   uint16_t m_tod_error;
   uint16_t m_toa_error;
 

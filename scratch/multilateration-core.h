@@ -174,9 +174,11 @@ class Multilateration
 		void SetFTMParams(int in_nBursts, double in_simulationTime, int in_nSTAs, double in_alpha);
 		void ConstructIfSessions(std::vector<int> in_anchorSTAs, WifiNetDevicesList in_APs, WifiNetDevicesList in_STAs, AddressList in_apAddrs);
 		void ConstructPassiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_staAddrs);
-		void ConstructActiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_staAddrs, std::set<std::vector<int>> in_activeLinks);
+		void ConstructActiveSessions(EnvConfig in_envConf, WifiNetDevicesList in_STAs, AddressList in_staAddrs);
 		void ConstructPeerDistance(EnvConfig in_envConf, WifiNetDevicesList in_STAs, PositionList in_posList, AddressList in_staAddrs);
 		void EndAllSessions();
+
+		SessionList GetBroadcastSessions();
 
 		SessionList GetAllSessions();
 
@@ -187,6 +189,7 @@ class Multilateration
 		FtmParams m_ftmParams;
 		Ptr<WiredFtmErrorModel> m_wiredErrorModel;
 		SessionList m_sessionList;
+		SessionList m_broadcastSessionList;
 		SessionList m_passiveSessionList;
 		Ptr<WirelessFtmErrorModel::FtmMap> m_ftmMap;
 
@@ -194,6 +197,7 @@ class Multilateration
 		Ptr<WirelessFtmErrorModel> GenerateWirelessErrorModel(Ptr<WifiNetDevice> in_sta);
 		WiredFtmErrorModel::ChannelBandwidth GetErrorModel();
 		Ptr<WirelessFtmErrorModel::FtmMap> LoadWirelessErrorMap();
+		Ptr<FtmSession> GenerateDefaultFTMSession(Ptr<WifiNetDevice> in_STA, Address in_recvAddr, bool is_passive);
 		Ptr<FtmSession> GenerateFTMSession(std::tuple<size_t, size_t> in_connection_Pair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr);
 		Ptr<FtmSession> GeneratePassiveFTMSession(std::tuple<size_t, size_t> in_connection_Pair, Ptr<WifiNetDevice> in_STA, Address in_recvAddr);
 		std::map<int, double> ComputeDistance(size_t in_nodeIdx, int in_nSTAs, PositionList in_posLists);

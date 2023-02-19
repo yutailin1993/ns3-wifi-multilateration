@@ -127,6 +127,8 @@ public:
    */
   void SetFtmParams (FtmParams params);
 
+  FtmRequestHeader GetDummyFtmHeader (void);
+ 
   /**
    * Returns the FTM parameters of the session.
    *
@@ -169,6 +171,8 @@ public:
    * \param timestamp the time stamp
    */
   void SetT2 (uint8_t dialog_token, uint64_t timestamp);
+
+  void SetActiveTime (uint64_t tod, uint64_t tor);
 
   /**
    * Sets T3.
@@ -286,7 +290,6 @@ private:
 
   Ptr<FtmDialog> m_current_dialog;  //!< The current dialog.
   uint8_t m_current_dialog_token;  //!< The current dialog token.
-  uint8_t m_previous_dialog_token;  //!< The previous dialog token.
   uint32_t m_number_of_bursts_remaining; //!< The remaining bursts.
   uint8_t m_ftms_per_burst_remaining; //!< The remaining FTMs for the current burst.
   Time m_current_burst_end; //!< The time when the current burst ends.
@@ -314,7 +317,7 @@ private:
   std::map<uint8_t, Ptr<FtmDialog>> m_ftm_dialogs; //!< The FTM dialog map.
   std::tuple<size_t, size_t> m_session_belonging; //!< The session belongs to which AP and STA
 
-  Callback <void, Ptr<Packet>, WifiMacHeader> send_packet; //!< Send packet callback.
+  Callback<void, Ptr<Packet>, WifiMacHeader> send_packet; //!< Send packet callback.
   Callback<void, Mac48Address> session_over_ftm_manager_callback; //!< Session over in the FtmManager callback.
   Callback<void, FtmSession> session_over_callback; //!< Session over user callback.
   Callback<void, Mac48Address, Time> block_session; //!< Block session callback.

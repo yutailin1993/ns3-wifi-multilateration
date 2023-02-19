@@ -467,6 +467,12 @@ WifiMac::GetTxop () const
   return m_txop;
 }
 
+uint8_t
+WifiMac::GetFtmAifsn (void)
+{
+  return m_ftm_manager->CalculateCurrentAifsn();
+}
+
 Ptr<QosTxop>
 WifiMac::GetQosTxop (AcIndex ac) const
 {
@@ -1577,7 +1583,7 @@ WifiMac::NewFtmSession (Mac48Address partner, bool isPassive)
 {
   NS_LOG_FUNCTION (this << partner);
   if (m_ftm_enabled) {
-    return m_ftm_manager->CreateNewSession(partner, FtmSession::FTM_INITIATOR, isPassive);
+    return m_ftm_manager->CreateNewSession(partner, FtmSession::FTM_RESPONDER, isPassive);
   }
   return 0;
 }

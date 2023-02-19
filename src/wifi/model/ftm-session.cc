@@ -24,6 +24,8 @@
 #include "ns3/mgt-headers.h"
 #include "ns3/wifi-mac-header.h"
 
+#include <math.h>
+
 
 namespace ns3 {
 
@@ -142,7 +144,6 @@ FtmSession::ProcessFtmRequest (FtmRequestHeader ftm_req)
               m_ftm_params.SetAsapCapable(true);
 
               m_current_dialog_token = 1;
-              m_previous_dialog_token = 0;
               m_number_of_bursts_remaining = 1 << m_ftm_params.GetNumberOfBurstsExponent(); // 2 ^ Number of Bursts
               m_ftms_per_burst_remaining = m_ftm_params.GetFtmsPerBurst();
               SessionBegin();
@@ -188,11 +189,11 @@ FtmSession::ProcessFtmResponse (FtmResponseHeader ftm_res)
               Time burst_begin = MilliSeconds (m_ftm_params.GetPartialTsfTimer());
               Simulator::Schedule(burst_begin, &FtmSession::StartNextBurst, this);
             }
-          else
-            {
-              m_number_of_bursts_remaining--;
-              Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
-            }
+          // else
+          //   {
+          //     m_number_of_bursts_remaining--;
+          //     Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
+          //   }
         }
       else if (status == FtmParams::REQUEST_FAILED)
         {
@@ -223,16 +224,15 @@ FtmSession::ProcessFtmResponse (FtmResponseHeader ftm_res)
         }
     }
 
-  if (ftm_res.GetFollowUpDialogToken() != 0)
-    {
-      Ptr<FtmDialog> follow_up_dialog = FindDialog(ftm_res.GetFollowUpDialogToken());
-      if(follow_up_dialog != 0 && follow_up_dialog->t1 == 0 && follow_up_dialog->t4 == 0)
-        {
-          follow_up_dialog->t1 = ftm_res.GetTimeOfDeparture();
-          follow_up_dialog->t4 = ftm_res.GetTimeOfArrival();
-          CalculateRTT (follow_up_dialog);
-        }
-    }
+  // if (ftm_res.GetFollowUpDialogToken() != 0)
+  //   {
+  //     Ptr<FtmDialog> follow_up_dialog = FindDialog(ftm_res.GetFollowUpDialogToken());
+  //     if(follow_up_dialog != 0 && follow_up_dialog->t1 == 0 && follow_up_dialog->t4 == 0)
+  //       {
+  //         follow_up_dialog->t1 = ftm_res.GetTimeOfDeparture();
+  //         CalculateRTT (follow_up_dialog);
+  //       }
+  //   }
 
   if (ftm_res.GetDialogToken() == 0)
     {
@@ -368,6 +368,16 @@ FtmSession::StartOverSessionIfNoResponse()
   }
 }
 
+FtmRequestHeader
+FtmSession::GetDummyFtmHeader (void)
+{
+  FtmRequestHeader ftm_req_hdr;
+  ftm_req_hdr.SetTrigger(1);
+  ftm_req_hdr.SetFtmParams(m_ftm_params);
+
+  return ftm_req_hdr;
+}
+
 void
 FtmSession::SessionBegin (void)
 {
@@ -456,11 +466,11 @@ FtmSession::SendNextFtmPacket (void)
 {
   if(m_ftms_per_burst_remaining > 0 && Simulator::Now() < m_current_burst_end)
     {
-      if (!CheckTimestampSet ())
-        {
-          Simulator::Schedule(m_next_ftm_packet / 10, &FtmSession::SendNextFtmPacket, this);
-          return;
-        }
+      // if (!CheckTimestampSet ())
+      //   {
+      //     Simulator::Schedule(m_next_ftm_packet / 10, &FtmSession::SendNextFtmPacket, this);
+      //     return;
+      //   }
       bool add_tsf_sync = false;
       if (m_ftms_per_burst_remaining == m_ftm_params.GetFtmsPerBurst())
         {
@@ -468,7 +478,6 @@ FtmSession::SendNextFtmPacket (void)
         }
       m_ftms_per_burst_remaining--;
 
-      m_previous_dialog_token = m_current_dialog_token;
       m_current_dialog_token++;
       if (m_current_dialog_token == 0)
         {
@@ -484,15 +493,8 @@ FtmSession::SendNextFtmPacket (void)
       m_current_dialog = new_dialog;
       m_ftm_dialogs.insert({m_current_dialog_token, new_dialog});
 
-      Ptr<FtmDialog> previous_dialog = FindDialog (m_previous_dialog_token);
       FtmResponseHeader ftm_res_hdr;
       ftm_res_hdr.SetDialogToken(m_current_dialog_token);
-      if(previous_dialog != 0)
-        {
-          ftm_res_hdr.SetFollowUpDialogToken(m_previous_dialog_token);
-          ftm_res_hdr.SetTimeOfDeparture(previous_dialog->t1);
-          ftm_res_hdr.SetTimeOfArrival(previous_dialog->t4);
-        }
       if (m_ftms_per_burst_remaining <= 0 && m_number_of_bursts_remaining <= 0)
         {
           ftm_res_hdr.SetDialogToken(0);
@@ -533,11 +535,11 @@ FtmSession::SendNextFtmPacket (void)
   else if(Simulator::Now() >= m_current_burst_end && m_number_of_bursts_remaining <= 0
           && m_ftms_per_burst_remaining > 0)
     {
-      if (!CheckTimestampSet ())
-        {
-          Simulator::Schedule(m_next_ftm_packet / 10, &FtmSession::SendNextFtmPacket, this);
-          return;
-        }
+      // if (!CheckTimestampSet ())
+      //   {
+      //     Simulator::Schedule(m_next_ftm_packet / 10, &FtmSession::SendNextFtmPacket, this);
+      //     return;
+      //   }
       /*
        * Our previous dialog is the last successfully received dialog. As there wont be a next dialog,
        * we do not have to create a new one and advance the dialog token. This is the last dialog of the session.
@@ -575,10 +577,8 @@ FtmSession::StartNextBurst (void)
       m_ftms_per_burst_remaining = m_ftm_params.GetFtmsPerBurst();
       m_current_burst_end = Simulator::Now() + MicroSeconds(m_ftm_params.DecodeBurstDuration());
 
-      if (m_session_type == FTM_INITIATOR)
-        {
-          SendTrigger();
-        }
+      
+      SendTrigger();
       if (m_number_of_bursts_remaining > 0)
         {
           Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
@@ -676,6 +676,19 @@ FtmSession::SetPassiveTime (uint64_t timestamp_1, uint64_t timestamp_2)
   m_ftm_dialogs.insert({token, dialog});
 }
 
+void
+FtmSession::SetActiveTime (uint64_t tod, uint64_t tor)
+{
+  uint8_t token = m_ftm_dialogs.size();
+  Ptr<FtmDialog> dialog = CreateNewDialog(token);
+  dialog->t1 = tod;
+  dialog->t4 = tor;
+
+  m_ftm_dialogs.insert({token, dialog});
+
+  CalculateRTT(dialog);
+}
+
 Ptr<FtmSession::FtmDialog>
 FtmSession::FindDialog (uint8_t dialog_token)
 {
@@ -722,9 +735,9 @@ FtmSession::GetMeanRTT (void)
   int32_t size = m_rtt_list.size();
   for(int64_t curr : m_rtt_list)
     {
-      if (curr*pow(10, -12)*299792458/2 > 1000 or curr*pow(10, -12)*299792458/2 < 0) {
+      if (curr*pow(10, -12)*299792458 > 1000 or curr*pow(10, -12)*299792458 < 0) {
         NS_LOG_DEBUG("RTT out of range, in session: " << std::get<0>(m_session_belonging) <<
-                     ", " << std::get<1>(m_session_belonging) << ", range: " << curr*pow(10, -12)*299792458/2);
+                     ", " << std::get<1>(m_session_belonging) << ", range: " << curr*pow(10, -12)*299792458);
         size -= 1;
         continue;
       }
@@ -781,10 +794,10 @@ FtmSession::CalculateRTT (Ptr<FtmDialog> dialog)
 
   //need to remove the duration twice, because we received twice per dialog
   //and otherwise readings are 8us off
-  rtt -= 2 * m_preamble_detection_duration;
+  rtt -= m_preamble_detection_duration;
 
   //add the error given by the current error model, by default error model is disabled
-  rtt += m_ftm_error_model->GetFtmError();
+  rtt += m_ftm_error_model->GetFtmError() / 2;
 
   m_rtt_list.push_back (rtt);
 
@@ -801,7 +814,7 @@ FtmSession::CheckTimestampSet (void)
     {
       return true;
     }
-  if (m_current_dialog->t1 == 0 || m_current_dialog->t4 == 0)
+  if (m_current_dialog->t1 == 0)
     {
       return false;
     }
@@ -872,20 +885,10 @@ FtmSession::DenySession (void)
 void
 FtmSession::SendTrigger (void)
 {
-  Ptr<Packet> packet = Create<Packet> ();
   FtmRequestHeader ftm_req;
   ftm_req.SetTrigger(1);
-  packet->AddHeader(ftm_req);
 
-  WifiActionHeader action_hdr;
-  WifiActionHeader::ActionValue action;
-  action.publicAction = WifiActionHeader::FTM_REQUEST;
-  action_hdr.SetAction(WifiActionHeader::PUBLIC_ACTION, action);
-  packet->AddHeader(action_hdr);
-
-  WifiMacHeader mac_hdr;
-  mac_hdr.SetAddr1(m_partner_addr);
-  send_packet (packet, mac_hdr);
+  ProcessFtmRequest(ftm_req);
 }
 
 void

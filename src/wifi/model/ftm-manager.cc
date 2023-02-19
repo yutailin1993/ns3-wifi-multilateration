@@ -23,6 +23,7 @@
 #include "ns3/wifi-mac-header.h"
 
 #include <math.h>
+#include <vector>
 
 
 namespace ns3 {
@@ -56,8 +57,8 @@ FtmManager::FtmManager (Ptr<WifiPhy> phy, Ptr<Txop> txop, uint16_t channelWidth)
   awaiting_ack = false;
   sent_packets = 0;
   sending_ack = false;
-  phy->TraceConnectWithoutContext("PhyTxBegin", MakeCallback(&FtmManager::PhyTxBegin, this));
-  phy->TraceConnectWithoutContext("PhyRxBegin", MakeCallback(&FtmManager::PhyRxBegin, this));
+  phy->TraceConnectWithoutContext("PhyFtmTxBegin", MakeCallback(&FtmManager::PhyFtmTxBegin, this));
+  phy->TraceConnectWithoutContext("PhyFtmRxBegin", MakeCallback(&FtmManager::PhyFtmRxBegin, this));
   m_txop = txop;
   m_channelWidth = channelWidth;
   m_txPowerConst = 5.43*pow(10,-6);
@@ -77,8 +78,8 @@ FtmManager::FtmManager (Ptr<WifiPhy> phy, Ptr<Txop> txop, uint16_t channelWidth)
 
 FtmManager::~FtmManager ()
 {
-  TraceDisconnectWithoutContext("PhyTxBegin", MakeCallback(&FtmManager::PhyTxBegin, this));
-  TraceDisconnectWithoutContext("PhyRxBegin", MakeCallback(&FtmManager::PhyRxBegin, this));
+  TraceDisconnectWithoutContext("PhyFtmTxBegin", MakeCallback(&FtmManager::PhyFtmTxBegin, this));
+  TraceDisconnectWithoutContext("PhyFtmRxBegin", MakeCallback(&FtmManager::PhyFtmRxBegin, this));
   sessions.clear();
   passiveSessions.clear();
   m_blocked_partners.clear();
@@ -86,7 +87,7 @@ FtmManager::~FtmManager ()
 }
 
 void
-FtmManager::PhyTxBegin(Ptr<const Packet> packet, double num)
+FtmManager::PhyFtmTxBegin(Ptr<const Packet> packet)
 {
 
   Time now = Simulator::Now();
@@ -108,9 +109,7 @@ FtmManager::PhyTxBegin(Ptr<const Packet> packet, double num)
                 {
                   FtmResponseHeader ftm_resp_hdr;
                   copy->RemoveHeader(ftm_resp_hdr);
-                  session->SetT1(ftm_resp_hdr.GetDialogToken(), pico_sec);
-
-                  PassiveFTM(hdr.GetAddr1(), pico_sec);
+                  // session->SetT1(ftm_resp_hdr.GetDialogToken(), pico_sec);
 
                   received_packets = 0;
                   awaiting_ack = true;
@@ -122,6 +121,7 @@ FtmManager::PhyTxBegin(Ptr<const Packet> packet, double num)
                   m_current_tx_packet = pieces;
                 }
             }
+            broadcast_cnt += 1;
       }
   }
   else if(hdr.IsAck()) {
@@ -132,7 +132,6 @@ FtmManager::PhyTxBegin(Ptr<const Packet> packet, double num)
               if (session != 0)
                 {
                   session->SetT3(m_current_rx_packet.ftm_res_hdr.GetDialogToken(), pico_sec);
-                  PassiveFTM(hdr.GetAddr1(), pico_sec);
                 }
           }
       }
@@ -140,7 +139,7 @@ FtmManager::PhyTxBegin(Ptr<const Packet> packet, double num)
 }
 
 void
-FtmManager::PhyRxBegin(Ptr<const Packet> packet, RxPowerWattPerChannelBand rxPowersW)
+FtmManager::PhyFtmRxBegin(Ptr<const Packet> packet, uint64_t tod)
 {
   NS_LOG_FUNCTION (this);
   Time now = Simulator::Now();
@@ -150,7 +149,7 @@ FtmManager::PhyRxBegin(Ptr<const Packet> packet, RxPowerWattPerChannelBand rxPow
   received_packets++;
   WifiMacHeader hdr;
   copy->RemoveHeader(hdr);
-  if(hdr.GetAddr1() == m_mac_address){
+  if(hdr.GetAddr1() == m_mac_address || hdr.GetAddr1() == Mac48Address::GetBroadcast()){
       if(hdr.IsMgt() && hdr.IsAction()) {
           WifiActionHeader action_hdr;
           copy->RemoveHeader(action_hdr);
@@ -164,10 +163,12 @@ FtmManager::PhyRxBegin(Ptr<const Packet> packet, RxPowerWattPerChannelBand rxPow
                   FtmResponseHeader ftm_res_hdr;
                   copy->RemoveHeader(ftm_res_hdr);
 
+                  NS_LOG_DEBUG("Recieved TOD: " << tod);
+
                   Ptr<FtmSession> session = FindSession(partner);
                   if (session != 0 && ftm_res_hdr.GetDialogToken() != 0)
                     {
-                      session->SetT2(ftm_res_hdr.GetDialogToken(), pico_sec);
+                      session->SetActiveTime(tod, pico_sec);
                       PacketInPieces pieces;
                       pieces.mac_hdr = hdr;
                       pieces.action_hdr = action_hdr;
@@ -175,19 +176,6 @@ FtmManager::PhyRxBegin(Ptr<const Packet> packet, RxPowerWattPerChannelBand rxPow
                       m_current_rx_packet = pieces;
                     }
               }
-          }
-      }
-      if(hdr.IsAck()) {
-          if(awaiting_ack && received_packets == 1) {
-              awaiting_ack = false;
-              Ptr<FtmSession> session = FindSession (m_current_tx_packet.mac_hdr.GetAddr1());
-              if (session != 0)
-                {
-                  session->SetT4(m_current_tx_packet.ftm_res_hdr.GetDialogToken(), pico_sec);
-                }
-          }
-          else if(awaiting_ack && received_packets > 1) { //this needs to be checked also for non ack, cause if ack never arrives but other packet, its still an error
-              awaiting_ack = false;
           }
       }
   }
@@ -236,8 +224,52 @@ FtmManager::SendPacket (Ptr<Packet> packet, WifiMacHeader hdr)
   hdr.SetAddr3(m_mac_address);
   hdr.SetDsNotTo();
   hdr.SetDsNotFrom();
-//  hdr.SetNoRetry();
+  //  hdr.SetNoRetry();
+
+  uint8_t aifsn = 2 + (rand() % 4) + CalculateCurrentAifsn();
+
+  m_txop->SetAifsn(aifsn);
   m_txop->Queue(packet, hdr);
+}
+
+uint8_t
+FtmManager::CalculateCurrentAifsn (void)
+{
+  std::vector<int> receivedFtmCnts;
+
+  std::map<Mac48Address, Ptr<FtmSession>>::iterator sessionIter;
+  for (sessionIter=sessions.begin(); sessionIter != sessions.end(); sessionIter++) {
+    if (sessionIter->first.IsBroadcast()) {
+      continue;
+    }
+    receivedFtmCnts.push_back(sessionIter->second->GetFtmDialogs().size());
+  }
+
+  double R_ij = 0;
+  int edgeCnt = 0;
+  for (auto &cnt : receivedFtmCnts) {
+    R_ij += log2(1+cnt);
+    if (cnt != 0) {
+      edgeCnt += 1;
+    }
+  }
+
+  double dynamic_capture;
+  if (broadcast_cnt == 0 && R_ij == 0) {
+    dynamic_capture = 0;
+  } else {
+    dynamic_capture = (1+edgeCnt*log2(1+1/(1+broadcast_cnt)))/(broadcast_cnt+R_ij);
+  }
+
+  uint8_t aifsn = uint8_t(floor(log2(1+std::min(double(1024), 1024*dynamic_capture))));
+  
+  NS_LOG_DEBUG("Node addr : " << m_mac_address << ", received edges: " << 
+               edgeCnt << ", R_ij: " << R_ij << ", broadcast_cnt: " << broadcast_cnt <<
+               " acc_aifsn: " << int(aifsn) << ", time: " << Simulator::Now());
+
+
+
+  return aifsn;
 }
 
 Ptr<FtmSession>
@@ -276,7 +308,7 @@ FtmManager::FindPassiveSession (Mac48Address addr)
 }
 
 void
-FtmManager::PassiveFTM (Mac48Address peer_addr, uint64_t timestamp)
+FtmManager::PassiveFTM (uint64_t timestamp)
 {
   double distance = sqrt(m_txPowerConst/pow(10,(m_rssiThreshold-30)/10));
   std::map<Mac48Address, double>::iterator it;

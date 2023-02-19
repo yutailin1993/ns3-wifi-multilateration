@@ -180,6 +180,8 @@ public:
    */
   void SetCtsToSelfSupported (bool enable);
 
+  uint8_t GetFtmAifsn (void);
+
   /**
    * \return the MAC address associated to this MAC layer.
    */

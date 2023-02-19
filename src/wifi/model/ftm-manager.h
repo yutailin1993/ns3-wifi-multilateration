@@ -100,6 +100,7 @@ public:
    */
   void ReceivedFtmResponse (Mac48Address partner, FtmResponseHeader ftm_res);
 
+  uint8_t CalculateCurrentAifsn (void);
 
 private:
 
@@ -125,7 +126,7 @@ private:
 
   double FindDistance (Mac48Address addr);
 
-  void PassiveFTM (Mac48Address peer_addr, uint64_t timestamp);  
+  void PassiveFTM (uint64_t timestamp);  
 
   /**
    * Called from the PHY layer when a frame starts transmitting and a time stamp gets taken.
@@ -134,7 +135,7 @@ private:
    * \param packet the packet
    * \param num a number, needed for the callback, not used
    */
-  void PhyTxBegin(Ptr<const Packet> packet, double num);
+  void PhyFtmTxBegin(Ptr<const Packet> packet);
 
   /**
    * Called from the PHY layer when a frame gets received and a time stamp gets taken.
@@ -143,7 +144,7 @@ private:
    * \param packet the packet
    * \param rxPowersW the power
    */
-  void PhyRxBegin(Ptr<const Packet> packet, RxPowerWattPerChannelBand rxPowersW);
+  void PhyFtmRxBegin(Ptr<const Packet> packet, uint64_t tod);
 
   /**
    * Sends the specified packet with the specified header.
@@ -198,6 +199,8 @@ private:
   std::map<Mac48Address, double> m_peerDistance;
   unsigned int received_packets;  //!< How many packets have been received, after transmitting a FTM frame.
   bool awaiting_ack; //!< Next packet should be ack.
+
+  int broadcast_cnt;
 
   unsigned int sent_packets; //!< How many packets have been sent, after receiving FTM frame.
   bool sending_ack; //!< Next packet should be ack.
