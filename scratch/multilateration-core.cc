@@ -156,7 +156,7 @@ WifiEnvironment::SetupMobility()
 	m_staPosAlloc = 
 		CreateObjectWithAttributes<RandomDiscPositionAllocator> ("X", StringValue("0"),
 																														 "Y", StringValue("0"),
-																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=20]"));
+																														 "Rho", StringValue("ns3::UniformRandomVariable[Min=0|Max=70]"));
 	m_mobility.SetPositionAllocator(m_staPosAlloc);
 	m_mobility.Install(m_wifiStaNodes);
 	
@@ -231,7 +231,7 @@ WifiEnvironment::SetupApplication()
 			client.SetAttribute("PacketSize", UintegerValue(m_payloadSize));
 
 			ApplicationContainer clientApp = client.Install(m_wifiApNodes.Get(i));
-			clientApp.Start(Seconds(1.1));
+			clientApp.Start(Seconds(1.0));
 			clientApp.Stop(Seconds(m_simulationTime));
 
 			m_clientApps.push_back(clientApp);
