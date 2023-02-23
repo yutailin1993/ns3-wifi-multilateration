@@ -199,7 +199,7 @@ GetActiveEdgePercentage(EnvConfig in_envConf, std::vector<std::vector<double>> a
 		}
 	}
 
-	return 100 * (activeCnt+30) / (totalCnt+30);
+	return 100 * (activeCnt+in_envConf.nSTAs) / (totalCnt+in_envConf.nSTAs);
 }
 
 double
@@ -247,12 +247,12 @@ GetActiveEDM(EnvConfig in_envConf)
 			double dist = 0.0;
 			int cnt = 0;
 
-			if (activeDistTpl != activeDistList.end()) {
+			if (activeDistTpl != activeDistList.end() && std::get<2>(*activeDistTpl) != -1) {
 				dist += std::get<2>(*activeDistTpl);
 				cnt += 1;
 			}
 
-			if (activeDistTpl_T != activeDistList.end()) {
+			if (activeDistTpl_T != activeDistList.end() && std::get<2>(*activeDistTpl_T) != -1) {
 				dist += std::get<2>(*activeDistTpl);
 				cnt += 1;
 			}
@@ -535,6 +535,9 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 
 	double alpha = in_envConf.alpha;
 
+	double app_simulationTime = 1+(in_simulationTime-1)*(in_envConf.alpha);
+	// std::cout << "app simulationTime: " << app_simulationTime << std::endl;
+
 	RngSeedManager::SetSeed(in_seed);
 	RngSeedManager::SetRun(in_seed);
 
@@ -545,7 +548,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 																						in_envConf.nSTAs,
 																						in_envConf.mcs,
 																						in_udpConfig.payloadSize,
-																						in_simulationTime,
+																						app_simulationTime,
 																						in_udpConfig.udpInterval);
 	Multilateration positioning = Multilateration(in_e, in_envConf.channelWidth);
 
@@ -571,7 +574,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	AddressList apAddrList = wifiEnv.GetApAddress();
 	AddressList staAddrList = wifiEnv.GetStaAddress();
 
-	positioning.SetFTMParams(in_nBursts, in_simulationTime, in_envConf.nSTAs, alpha);
+	positioning.SetFTMParams(in_nBursts, app_simulationTime, in_envConf.nSTAs, alpha);
 	positioning.ConstructActiveSessions(in_envConf, wifiSTAlist, staAddrList);
 	// positioning.ConstructPassiveSessions(in_envConf, wifiSTAlist, staAddrList);
 
@@ -586,7 +589,7 @@ RunSimulation(uint32_t in_seed, uint8_t in_nBursts, EModel in_e, EnvConfig in_en
 	}
 	
 	Simulator::Schedule (Seconds (0.0), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
-	Simulator::Stop(Seconds (in_simulationTime));
+	Simulator::Stop(Seconds (app_simulationTime));
 	Simulator::Run();
 	
 	ApplicationContainer serverApp = wifiEnv.GetServerApps();
@@ -671,14 +674,17 @@ main(int argc, char *argv[])
 	// LogComponentEnable("WifiMacQueue", LOG_LEVEL_DEBUG);
 
 	const double simT = 1.0;
+	size_t staPerAP = 20;
 	
 	std::cout << "begin simulation" << std::endl;
+	// double alpha_list[] = {0.05, 0.075, 0.1, 0.2, 0.3, 0.4};
+	double alpha_list[] = {0.1, 0.3, 0.5, 0.7, 0.9};
 
 	// size_t staPerAP = 10;
 	int bps = 2;
   
-	for (size_t staPerAP=20; staPerAP<30; staPerAP+=10) {
-		std::cout << "# STA: " << staPerAP*3 << ", With CS " << std::endl;
+	for (double alpha : alpha_list) {
+		std::cout << "# STA: " << staPerAP*3 << std::endl;
 		std::vector<std::tuple<double, double, double, double, double, double, double>> resultsList;
 		
 		EnvConfig envConf = {
@@ -686,15 +692,15 @@ main(int argc, char *argv[])
 			3*staPerAP, // nSTAs
 			4, // mcs
 			80, // channelWidth
-			0.1 // alpha
+			alpha // alpha
 		};
 		UdpConfig udpConf = {
 			1500, // payloadSize
 			"0.0012" // udpInterval
 		};
 
-		const double simulationTime = 1.0 + simT*envConf.alpha;
-		for (int simNum=1; simNum<21; simNum++) {
+		const double simulationTime = 1.0 + simT;
+		for (int simNum=1; simNum<11; simNum++) {
 			std::cout << "Simulation: " << simNum << ", alpha: " << envConf.alpha << std::endl;
 			resultsList.push_back(RunSimulation(simNum, bps, EModel::WIRED_ERROR, envConf, udpConf, simulationTime));
 			

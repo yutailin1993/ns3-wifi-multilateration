@@ -758,7 +758,7 @@ if __name__ == '__main__':
 
         recon = DistMatrixReconstruction(measured_dist_matrix, measured_dist_matrix.shape[0])
 
-        D = recon.EDM_Completion(1, 0.05, 500)
+        D = recon.EDM_Completion(1, 0.1, 500)
 
         mds = applyMDS(D)
         

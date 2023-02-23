@@ -258,7 +258,7 @@ FtmManager::CalculateCurrentAifsn (void)
   if (broadcast_cnt == 0 && R_ij == 0) {
     dynamic_capture = 0;
   } else {
-    dynamic_capture = (1+edgeCnt*log2(1+1/(1+broadcast_cnt)))/(broadcast_cnt+R_ij);
+    dynamic_capture = (1+edgeCnt*log2(1+broadcast_cnt))/(broadcast_cnt+R_ij);
   }
 
   uint8_t aifsn = uint8_t(floor(log2(1+std::min(double(1024), 1024*dynamic_capture))));

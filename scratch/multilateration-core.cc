@@ -563,7 +563,7 @@ Multilateration::SetFTMParams(int in_nBurstsPerSecond, double in_simulationTime,
 	// int totalBursts = 54;
 	int burstExponent = int (log2(totalBursts));
 
-	int ftmPerBurst = std::max(1, int (floor(500 * in_alpha / (0.4 * in_nSTAs))) - 1);
+	int ftmPerBurst = std::min(5, std::max(1, int (floor(500 * in_alpha / (0.4 * in_nSTAs))) - 1));
 
 	std::cout << "FTM per burst: " << ftmPerBurst << std::endl;
 
