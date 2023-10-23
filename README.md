@@ -5,8 +5,8 @@ CO2P: A New Paradigm of Communication-Aware Collaborative Positioning for Future
 ## Table of Contents:
 
 1) [An overview](#co2p-overview)
-2) [Building ns-3](#building-ns-3)
-3) [Running ns-3](#running-ns-3)
+2) [Building CO2P](#building-co2p)
+3) [Running CO2P](#running-co2p)
 
 
 Note:  Much more substantial information about ns-3 can be found at
@@ -20,7 +20,7 @@ There are 3 major branches in this work, i.e. centralizedCP, centralizedIP, and 
 
 The entry point is in `scratch/multilateration.cc` for all branches. For graph operation including constructing rigid topology for centralizedCP and MDS-based localization, please check `graph.py`.
 
-## Building ns-3
+## Building CO2P
 
 To build the project for all branches, you can navigate to project root directory and use the following command:
 ```shell
@@ -36,8 +36,7 @@ For the detail of build NS3 project, please refer to [NS3 document](https://www.
 
 Note that this project has been tested on ubuntu 20.04 and macOS.
 
-
-## Running ns-3
+## Running CO2P
 
 After done building ns3, you can run the project with following command:
 
