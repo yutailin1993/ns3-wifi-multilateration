@@ -5,6 +5,10 @@
 #include <string>
 #include <sstream>
 #include <cstdlib>
+#include <cassert>
+#include <cassert>
+#include <cassert>
+#include <cassert>
 
 #include "ns3/command-line.h"
 #include "ns3/config.h"
