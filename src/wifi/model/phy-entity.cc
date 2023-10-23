@@ -839,7 +839,7 @@ PhyEntity::EndPreambleDetectionPeriod (Ptr<Event> event)
   m_wifiPhy->m_currentEvent = event;
 
   double snr = m_wifiPhy->m_interference.CalculateSnr (m_wifiPhy->m_currentEvent, measurementChannelWidth, 1, measurementBand);
-  NS_LOG_DEBUG ("SNR(dB)=" << RatioToDb (snr) << " at end of preamble detection period");
+  NS_LOG_ERROR ("SNR(dB)=" << RatioToDb (snr) << " at end of preamble detection period");
 
   if ((!m_wifiPhy->m_preambleDetectionModel && maxRxPowerW > 0.0)
       || (m_wifiPhy->m_preambleDetectionModel && m_wifiPhy->m_preambleDetectionModel->IsPreambleDetected (m_wifiPhy->m_currentEvent->GetRxPowerW (measurementBand), snr, measurementChannelWidth)))

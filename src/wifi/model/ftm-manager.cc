@@ -67,7 +67,7 @@ FtmManager::FtmManager (Ptr<WifiPhy> phy, Ptr<Txop> txop, uint16_t channelWidth)
   } else if (m_channelWidth == 40) {
     m_rssiThreshold = -67;
   } else if (m_channelWidth == 80) {
-    m_rssiThreshold = -64;
+    m_rssiThreshold = -60;
   } else {
     NS_FATAL_ERROR("Current FTM implementation not support for channel width " << m_channelWidth << " MHz!!");
   }

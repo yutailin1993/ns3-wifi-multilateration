@@ -167,8 +167,8 @@ class LocMap:
 
     def ConstructEdgesK(self):
         for i in range(self.nodes_num):
-            if np.count_nonzero(self.graph) < self.K:
-                diff = self.K - np.count_nonzero(self.graph)
+            if np.count_nonzero(self.graph[i]) < self.K:
+                diff = self.K - np.count_nonzero(self.graph[i])
                 assert (diff > 0)
                 dist_list = np.argsort(self.dist_matrix[i])
                 for j in dist_list:
@@ -717,7 +717,7 @@ if __name__ == '__main__':
         # np.savetxt('node_pos.csv', nodes_pos, delimiter=',')
         channel_bandwidth = int(sys.argv[3])
         node_num = nodes_pos.shape[0]
-        loc_pos = LocMap(nodes_pos, K=4)
+        loc_pos = LocMap(nodes_pos, K=15)
         loc_pos.HennenburgConstruction(random.randint(0, node_num-1))
         loc_pos.ConstructEdgesK()
         loc_pos.trilateration_ordering_check()
