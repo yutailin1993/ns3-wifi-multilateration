@@ -39,6 +39,7 @@
 #include <queue>
 #include <map>
 #include <list>
+#include <cassert>
 
 namespace ns3 {
 

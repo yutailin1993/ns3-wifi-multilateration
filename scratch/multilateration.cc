@@ -5,6 +5,7 @@
 #include <string>
 #include <sstream>
 #include <cstdlib>
+#include <cassert>
 
 #include "ns3/command-line.h"
 #include "ns3/config.h"
@@ -678,7 +679,7 @@ main(int argc, char *argv[])
 	
 	std::cout << "begin simulation" << std::endl;
 	// double alpha_list[] = {0.05, 0.075, 0.1, 0.2, 0.3, 0.4};
-	double alpha_list[] = {0.1, 0.3, 0.5, 0.7, 0.9};
+	double alpha_list[] = {0.3, 0.5, 0.7, 0.9};
 
 	// size_t staPerAP = 10;
 	int bps = 2;
