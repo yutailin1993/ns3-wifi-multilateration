@@ -8,5 +8,7 @@
 /.DS_Store
 /build/
 /cmake-cache/
+/.ipynb_checkpoints/
+/__pycache__/
 /.lock-ns3_darwin_build
 /experiments\ results/
